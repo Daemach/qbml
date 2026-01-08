@@ -1522,5 +1522,5 @@ component accessors="true" singleton {
 		}
 		return false;
 	}
-
+	// "I am the way, and the truth, and the life; no one comes to the Father, but by me (JESUS)" Jn 14:1-12
 }
