@@ -49,6 +49,12 @@ jobs:
           curl -sSf http://127.0.0.1:8080/ || echo "Server warmup..."
           sleep 5
 
+      - name: Initialize Test Database
+        run: |
+          echo "Initializing H2 test database..."
+          curl -sSf "http://127.0.0.1:8080/tests/runner.cfm?directory=tests.specs&bundles=&labels=&excludes=&reporter=simple" -o /dev/null || echo "Database initialization triggered"
+          sleep 2
+
       - name: Run Tests
         run: |
           box testbox run runner="http://127.0.0.1:8080/tests/runner.cfm" outputFormats="json,text" verbose=true

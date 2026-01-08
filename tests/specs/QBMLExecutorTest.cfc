@@ -223,10 +223,11 @@ component extends="tests.specs.QBMLBaseTest" {
 			} );
 
 			it( "uses whereRaw with bindings", function() {
+				// Use date range comparison instead of YEAR() for H2 compatibility
 				var query = [
 					{ "from" : "qbml_orders" },
 					{ "select" : [ "id", "order_number", "total" ] },
-					{ "whereRaw" : [ "YEAR(order_date) = ?", [ 2024 ] ] },
+					{ "whereRaw" : [ "order_date >= ? AND order_date < ?", [ "2024-01-01", "2025-01-01" ] ] },
 					{ "get" : true }
 				];
 

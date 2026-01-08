@@ -4,6 +4,10 @@
  */
 component extends="testbox.system.BaseSpec" {
 
+	function isCI() {
+		return len( server.system.environment.CI ?: "" ) || len( server.system.environment.GITHUB_ACTIONS ?: "" );
+	}
+
 	function getQBML() {
 		// Test settings with all qbml_* tables allowed
 		var testSettings = {
@@ -21,8 +25,12 @@ component extends="testbox.system.BaseSpec" {
 		};
 
 		// Create QB dependencies for standalone testing
-		var utils   = new qb.models.Query.QueryUtils();
-		var grammar = new qb.models.Grammars.SqlServerGrammar( utils );
+		var utils = new qb.models.Query.QueryUtils();
+
+		// Use MySQL grammar for H2 in CI, SqlServer for local development
+		var grammar = isCI()
+			? new qb.models.Grammars.MySQLGrammar( utils )
+			: new qb.models.Grammars.SqlServerGrammar( utils );
 
 		// Create a QB provider that returns new QueryBuilder instances
 		var qbProvider = {

@@ -5,22 +5,31 @@ component {
 	// ============================================
 	// DATASOURCE CONFIGURATION
 	// ============================================
-	// Option 1: Use environment variable
-	// Option 2: Set default datasource name (must be configured in Lucee/ACF admin)
-	// Option 3: Define inline datasource (shown below)
+	// Detect CI environment and configure H2 in-memory database
+	variables.isCI = len( server.system.environment.CI ?: "" ) || len( server.system.environment.GITHUB_ACTIONS ?: "" );
 
-	// Default datasource for tests - configure as needed
-	this.defaultDatasource = "qbmlTests";
-
-	// Inline datasource definition (uncomment and configure for your environment)
+	if ( variables.isCI ) {
+		// CI Environment: Use H2 in-memory database
+		this.datasources[ "qbmlTests" ] = {
+			class            : "org.h2.Driver",
+			connectionString : "jdbc:h2:mem:qbmlTests;MODE=MySQL;DATABASE_TO_LOWER=TRUE;IGNORECASE=TRUE",
+			username         : "sa",
+			password         : ""
+		};
+	}
+	// For local development, configure your datasource in Lucee admin or uncomment below:
 	/*
-	this.datasources[ "qbmlTests" ] = {
-		class            : "com.microsoft.sqlserver.jdbc.SQLServerDriver",
-		connectionString : "jdbc:sqlserver://localhost:1433;databaseName=qbml_test;trustServerCertificate=true",
-		username         : "sa",
-		password         : "yourPassword"
-	};
+	else {
+		this.datasources[ "qbmlTests" ] = {
+			class            : "com.microsoft.sqlserver.jdbc.SQLServerDriver",
+			connectionString : "jdbc:sqlserver://localhost:1433;databaseName=qbml_test;trustServerCertificate=true",
+			username         : "sa",
+			password         : "yourPassword"
+		};
+	}
 	*/
+
+	this.defaultDatasource = "qbmlTests";
 
 	// ============================================
 	// MAPPINGS
@@ -33,9 +42,42 @@ component {
 	this.mappings[ "/qb" ]          = expandPath( "../modules/qb" );
 	this.mappings[ "/cbpaginator" ] = expandPath( "../modules/qb/modules/cbpaginator" );
 
+	function onApplicationStart() {
+		// Initialize database tables for CI
+		if ( variables.isCI ) {
+			setupTestDatabase();
+		}
+		return true;
+	}
+
 	function onRequestStart() {
-		// Clear the application scope for testing
-		structClear( application );
+		// Re-initialize database on each request if needed (for test isolation)
+		if ( url.reinitDb ?: false ) {
+			setupTestDatabase();
+		}
+	}
+
+	private function setupTestDatabase() {
+		var sqlFile = expandPath( "./sql/setup-h2.sql" );
+		if ( fileExists( sqlFile ) ) {
+			var sql = fileRead( sqlFile );
+			// Split by semicolons and execute each statement
+			var statements = sql.listToArray( ";" );
+			for ( var stmt in statements ) {
+				stmt = stmt.trim();
+				// Skip empty statements and comments
+				if ( len( stmt ) && !stmt.startsWith( "--" ) ) {
+					try {
+						queryExecute( stmt, {}, { datasource : "qbmlTests" } );
+					} catch ( any e ) {
+						// Log but continue - some statements may fail on re-run
+						if ( !e.message contains "already exists" && !e.message contains "Duplicate" ) {
+							writeLog( text = "SQL Setup Error: #e.message# - Statement: #left( stmt, 100 )#", type = "warning" );
+						}
+					}
+				}
+			}
+		}
 	}
 
 }
