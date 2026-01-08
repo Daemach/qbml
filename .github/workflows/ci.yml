@@ -139,8 +139,12 @@ jobs:
       - name: Setup CommandBox
         uses: Ortus-Solutions/setup-commandbox@v2.0.1
         with:
-          version: "6.0.0"
           forgeboxAPIKey: ${{ secrets.FORGEBOX_API_KEY }}
+
+      - name: Install CommandBox BoxLang Module
+        run: |
+          box install commandbox-boxlang
+          box config set endpoints.forgebox.APIToken=${{ secrets.FORGEBOX_API_KEY }}
 
       - name: Install Dependencies
         run: box install
