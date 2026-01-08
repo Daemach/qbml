@@ -1,6 +1,6 @@
 # QBML - Query Builder Markup Language
 
-A ColdBox module that translates JSON query definitions into [qb](https://qb.ortusbooks.com/) queries. Store queries in databases, build them dynamically from client data, and execute with security controls.
+A ColdBox module that translates JSON query definitions into [QueryBuilder](https://qb.ortusbooks.com/) queries. Store queries in databases, build them dynamically from client data, and execute with security controls.
 
 [![ForgeBox](https://forgebox.io/api/v1/entry/qbml/badges/version)](https://forgebox.io/view/qbml)
 [![CI](https://github.com/Daemach/qbml/actions/workflows/ci.yml/badge.svg)](https://github.com/Daemach/qbml/actions/workflows/ci.yml)
@@ -9,9 +9,10 @@ A ColdBox module that translates JSON query definitions into [qb](https://qb.ort
 ## Features
 
 - **JSON-based Query Language** - Define queries as portable JSON structures
-- **Full QB Support** - All QB query builder methods available
+- **Full QB Support** - All (select) QB methods available
 - **Security First** - Table allowlist/blocklist, SQL injection protection
-- **Conditional Logic** - Apply query parts based on runtime conditions
+- **Parameterization** - Inject runtime values with `$param` references
+- **Conditional Logic** - Skip or include clauses with `when` conditions
 - **Tabular Format** - Compact result format with type metadata
 - **CTEs & Subqueries** - Full support for complex query patterns
 
@@ -968,5 +969,20 @@ MIT License - see [LICENSE](LICENSE) file for details.
 
 ## Credits
 
-- Powered by [QueryBuilder](https://qb.ortusbooks.com/) by Ortus Solutions
-- Inspired by the need for portable, secure query definitions
+### Powered by Ortus Solutions
+
+<a href="https://www.ortussolutions.com">
+    <img src="https://www.ortussolutions.com/__media/ortus-logo-full-color.svg" alt="Ortus Solutions" width="200">
+</a>
+
+QBML is built on top of the excellent [QueryBuilder (qb)](https://qb.ortusbooks.com/) module created by [Eric Peterson](https://github.com/elpete) at [Ortus Solutions](https://www.ortussolutions.com).
+
+**Key Ortus Tools Used:**
+
+- [qb](https://qb.ortusbooks.com/) - Fluent query builder for CFML (by Eric Peterson)
+- [TestBox](https://testbox.ortusbooks.com/) - BDD/TDD testing framework
+- [CommandBox](https://commandbox.ortusbooks.com/) - CLI and package manager
+
+---
+
+*Inspired by the need for portable, secure query definitions*
