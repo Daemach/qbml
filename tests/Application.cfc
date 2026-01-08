@@ -5,22 +5,31 @@ component {
 	// ============================================
 	// DATASOURCE CONFIGURATION
 	// ============================================
-	// Detect CI environment and configure MySQL database (service container)
-	variables.isCI = len( server.system.environment.CI ?: "" ) || len( server.system.environment.GITHUB_ACTIONS ?: "" );
+	// Detect CI environment and BoxLang runtime safely
+	variables.isBoxLang = structKeyExists( server, "boxlang" );
+	variables.isCI      = false;
+	if (
+		structKeyExists( server, "system" ) &&
+		structKeyExists( server.system, "environment" ) &&
+		isStruct( server.system.environment )
+	) {
+		variables.isCI = (
+			( structKeyExists( server.system.environment, "CI" ) && len( server.system.environment.CI ) ) ||
+			( structKeyExists( server.system.environment, "GITHUB_ACTIONS" ) && len( server.system.environment.GITHUB_ACTIONS ) )
+		);
+	}
 
-	if ( variables.isCI ) {
-		// CI Environment: Use MySQL service container
+	if ( variables.isCI || variables.isBoxLang ) {
+		// CI Environment or BoxLang: Use MySQL database
 		// Database is pre-populated via mysql CLI in GitHub Actions workflow
-		// Use driver-based config for BoxLang compatibility, with class fallback for Lucee
+		// Hard-coded values match the CI workflow configuration
 		this.datasources[ "qbmlTests" ] = {
 			driver   : "mysql",
-			class    : "com.mysql.cj.jdbc.Driver",
-			host     : server.system.environment.DB_HOST ?: "127.0.0.1",
-			port     : server.system.environment.DB_PORT ?: "3306",
-			database : server.system.environment.DB_DATABASE ?: "qbml_test",
-			username : server.system.environment.DB_USER ?: "qbml",
-			password : server.system.environment.DB_PASSWORD ?: "qbml_password",
-			custom   : { useSSL : false, allowPublicKeyRetrieval : true, serverTimezone : "UTC" }
+			host     : "127.0.0.1",
+			port     : "3306",
+			database : "qbml_test",
+			username : "qbml",
+			password : "qbml_password"
 		};
 	}
 	// For local development, configure your datasource in Lucee admin or uncomment below:

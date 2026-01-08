@@ -5,7 +5,17 @@
 component extends="testbox.system.BaseSpec" {
 
 	function isCI() {
-		return len( server.system.environment.CI ?: "" ) || len( server.system.environment.GITHUB_ACTIONS ?: "" );
+		if (
+			structKeyExists( server, "system" ) &&
+			structKeyExists( server.system, "environment" ) &&
+			isStruct( server.system.environment )
+		) {
+			return (
+				( structKeyExists( server.system.environment, "CI" ) && len( server.system.environment.CI ) ) ||
+				( structKeyExists( server.system.environment, "GITHUB_ACTIONS" ) && len( server.system.environment.GITHUB_ACTIONS ) )
+			);
+		}
+		return false;
 	}
 
 	function isBoxLang() {
