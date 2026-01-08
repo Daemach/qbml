@@ -158,9 +158,16 @@ jobs:
       - name: Start BoxLang Server
         run: |
           box server start cfengine=boxlang --debug
+          echo "Waiting for BoxLang server to start..."
+          for i in {1..30}; do
+            if curl -sSf http://127.0.0.1:8080/ > /dev/null 2>&1; then
+              echo "Server is up after $i attempts"
+              break
+            fi
+            echo "Attempt $i: Server not ready, waiting..."
+            sleep 5
+          done
           box server log
-          curl -sSf http://127.0.0.1:8080/ || echo "Server warmup..."
-          sleep 10
         env:
           DB_HOST: 127.0.0.1
           DB_PORT: 3306
