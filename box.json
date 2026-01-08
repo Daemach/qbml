@@ -1,0 +1,49 @@
+{
+    "name":"qbml",
+    "slug":"qbml",
+    "version":"1.0.0",
+    "author":"John Wilson",
+    "location":"https://github.com/Daemach/qbml",
+    "homepage":"https://github.com/Daemach/qbml",
+    "documentation":"https://github.com/Daemach/qbml",
+    "repository":{
+        "type":"git",
+        "URL":"https://github.com/Daemach/qbml"
+    },
+    "bugs":"https://github.com/Daemach/qbml/issues",
+    "shortDescription":"JSON-based query language for qb-cfml",
+    "description":"QBML (Query Builder Markup Language) translates JSON query definitions into QB queries. Store queries in databases, build them dynamically from client data, and execute with security controls.",
+    "type":"modules",
+    "keywords":[
+        "qb",
+        "query",
+        "json",
+        "dsl",
+        "coldbox",
+        "cfml"
+    ],
+    "license":[
+        {
+            "type":"MIT",
+            "URL":"https://opensource.org/licenses/MIT"
+        }
+    ],
+    "contributors":[],
+    "dependencies":{
+        "qb":"^13.0.0"
+    },
+    "devDependencies":{
+        "testbox":"^5.0.0"
+    },
+    "engines":{
+        "coldfusion":">=2021",
+        "lucee":">=5.3"
+    },
+    "testbox":{
+        "runner":"http://localhost:64758/tests/runner.cfm"
+    },
+    "installPaths":{
+        "qb":"modules/qb/",
+        "testbox":"modules/testbox/"
+    }
+}

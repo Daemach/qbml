@@ -1,0 +1,7 @@
+.mcp.json
+.claude
+CLAUDE.md
+.vscode/
+nul
+modules/*
+!modules/.gitkeep
