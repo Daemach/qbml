@@ -34,7 +34,7 @@ jobs:
           java-version: "11"
 
       - name: Setup CommandBox
-        uses: Ortus-Solutions/setup-commandbox@v2
+        uses: Ortus-Solutions/setup-commandbox@v2.0.1
         with:
           version: "6.0.0"
           forgeboxAPIKey: ${{ secrets.FORGEBOX_API_KEY }}
@@ -90,7 +90,7 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Setup CommandBox
-        uses: Ortus-Solutions/setup-commandbox@v2
+        uses: Ortus-Solutions/setup-commandbox@v2.0.1
         with:
           version: "6.0.0"
           forgeboxAPIKey: ${{ secrets.FORGEBOX_API_KEY }}
