@@ -968,5 +968,5 @@ MIT License - see [LICENSE](LICENSE) file for details.
 
 ## Credits
 
-- Built on [qb](https://qb.ortusbooks.com/) by Ortus Solutions
+- Powered by [QueryBuilder](https://qb.ortusbooks.com/) by Ortus Solutions
 - Inspired by the need for portable, secure query definitions

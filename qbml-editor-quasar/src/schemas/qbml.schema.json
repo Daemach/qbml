@@ -1,0 +1,1378 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://qbml.ortusbooks.com/schemas/qbml.schema.json",
+  "title": "QBML Query Definition",
+  "description": "Query Builder Markup Language - JSON-based query definitions for qb.\n\nDocumentation: https://qb.ortusbooks.com/",
+  "type": "array",
+  "minItems": 1,
+  "items": {
+    "$ref": "#/definitions/action"
+  },
+  "definitions": {
+    "action": {
+      "type": "object",
+      "description": "A QBML action object. Each action represents a single query builder method call.",
+      "minProperties": 1,
+      "oneOf": [
+        { "$ref": "#/definitions/sourceAction" },
+        { "$ref": "#/definitions/selectAction" },
+        { "$ref": "#/definitions/whereAction" },
+        { "$ref": "#/definitions/joinAction" },
+        { "$ref": "#/definitions/groupAction" },
+        { "$ref": "#/definitions/orderAction" },
+        { "$ref": "#/definitions/limitAction" },
+        { "$ref": "#/definitions/lockAction" },
+        { "$ref": "#/definitions/cteAction" },
+        { "$ref": "#/definitions/unionAction" },
+        { "$ref": "#/definitions/executorAction" }
+      ]
+    },
+    "sourceAction": {
+      "description": "Source actions define which table(s) to query from.",
+      "oneOf": [
+        { "$ref": "#/definitions/fromAction" },
+        { "$ref": "#/definitions/fromSubAction" },
+        { "$ref": "#/definitions/fromRawAction" },
+        { "$ref": "#/definitions/tableAction" }
+      ]
+    },
+    "fromAction": {
+      "type": "object",
+      "description": "**FROM - Specify the table to query**\n\nSets the primary table for your query.\n\n**Simple:**\n```json\n{ \"from\": \"users\" }\n```\n\n**With alias:**\n```json\n{ \"from\": \"users u\" }\n```\n\n**With schema:**\n```json\n{ \"from\": \"dbo.customers c\" }\n```\n\n[qb docs](https://qb.ortusbooks.com/query-builder/building-queries/from)",
+      "properties": {
+        "from": {
+          "oneOf": [
+            {
+              "type": "string",
+              "description": "**Table name** - Optionally include an alias after a space\n\nExamples: `\"users\"`, `\"users u\"`, `\"dbo.orders o\"`",
+              "examples": ["users", "users u", "dbo.customers c"]
+            },
+            {
+              "type": "object",
+              "description": "**Object form** with explicit table and alias properties",
+              "properties": {
+                "table": { "type": "string", "description": "Table name" },
+                "name": { "type": "string", "description": "Alternative to 'table'" }
+              },
+              "oneOf": [
+                { "required": ["table"] },
+                { "required": ["name"] }
+              ]
+            }
+          ]
+        }
+      },
+      "required": ["from"],
+      "additionalProperties": false
+    },
+    "tableAction": {
+      "type": "object",
+      "description": "Alias for 'from'. Specify the table to query from.",
+      "properties": {
+        "table": {
+          "type": "string",
+          "description": "Table name, optionally with alias",
+          "examples": ["users", "orders o"]
+        }
+      },
+      "required": ["table"],
+      "additionalProperties": false
+    },
+    "fromSubAction": {
+      "type": "object",
+      "description": "Use a subquery as the FROM source (derived table).\n\n[qb docs](https://qb.ortusbooks.com/query-builder/building-queries/from#fromsub)",
+      "properties": {
+        "fromSub": {
+          "oneOf": [
+            { "type": "string", "description": "Alias for the derived table" },
+            {
+              "type": "object",
+              "properties": {
+                "alias": { "type": "string", "description": "Alias for the derived table" }
+              },
+              "required": ["alias"]
+            }
+          ]
+        },
+        "query": {
+          "$ref": "#/definitions/subquery",
+          "description": "The subquery definition"
+        },
+        "alias": {
+          "type": "string",
+          "description": "Alternative location for alias"
+        }
+      },
+      "required": ["fromSub", "query"],
+      "additionalProperties": false
+    },
+    "fromRawAction": {
+      "type": "object",
+      "description": "Use a raw SQL expression as the FROM source.\n\n[qb docs](https://qb.ortusbooks.com/query-builder/building-queries/from#fromraw)",
+      "properties": {
+        "fromRaw": {
+          "type": "string",
+          "description": "Raw SQL table expression",
+          "examples": ["custom_view", "table_function()"]
+        }
+      },
+      "required": ["fromRaw"],
+      "additionalProperties": false
+    },
+    "selectAction": {
+      "description": "**SELECT - Define columns to retrieve**\n\nSpecifies which columns to include in the query results.\n\n**Options:**\n- `select` - Primary column selection\n- `addSelect` - Add columns to existing selection\n- `distinct` - Remove duplicate rows\n- `selectRaw` - Raw SQL expressions\n- `subSelect` - Subquery as column\n- Aggregates: `count`, `sum`, `avg`, `min`, `max`",
+      "oneOf": [
+        { "$ref": "#/definitions/selectColumns" },
+        { "$ref": "#/definitions/addSelectAction" },
+        { "$ref": "#/definitions/distinctAction" },
+        { "$ref": "#/definitions/selectRawAction" },
+        { "$ref": "#/definitions/subSelectAction" },
+        { "$ref": "#/definitions/selectAggregateAction" }
+      ]
+    },
+    "selectColumns": {
+      "type": "object",
+      "description": "**SELECT - Choose columns to retrieve**\n\n**All columns:**\n```json\n{ \"select\": \"*\" }\n```\n\n**Specific columns:**\n```json\n{ \"select\": [\"id\", \"name\", \"email\"] }\n```\n\n**With aliases:**\n```json\n{ \"select\": [\"u.id\", \"u.name AS username\"] }\n```\n\n**With raw SQL:**\n```json\n{ \"select\": [\"id\", { \"$raw\": \"COUNT(*) AS total\" }] }\n```\n\n[qb docs](https://qb.ortusbooks.com/query-builder/building-queries/selects)",
+      "properties": {
+        "select": {
+          "oneOf": [
+            {
+              "type": "string",
+              "description": "**Single column** or `*` for all columns",
+              "examples": ["*", "id", "name"]
+            },
+            {
+              "type": "array",
+              "description": "**Array of columns** - Can include aliases (`col AS alias`) and raw expressions",
+              "items": {
+                "oneOf": [
+                  { "type": "string", "description": "Column name, optionally with `AS alias`" },
+                  { "$ref": "#/definitions/rawExpression" }
+                ]
+              },
+              "examples": [["id", "name", "email"], ["u.id", "u.name AS username"]]
+            },
+            {
+              "type": "object",
+              "description": "**Object form** with explicit properties",
+              "properties": {
+                "columns": {
+                  "oneOf": [
+                    { "type": "string" },
+                    { "type": "array", "items": { "type": "string" } }
+                  ]
+                },
+                "column": { "type": "string" }
+              }
+            }
+          ]
+        }
+      },
+      "required": ["select"],
+      "additionalProperties": false
+    },
+    "addSelectAction": {
+      "type": "object",
+      "description": "Add additional columns to an existing select.\n\n[qb docs](https://qb.ortusbooks.com/query-builder/building-queries/selects#addselect)",
+      "properties": {
+        "addSelect": {
+          "oneOf": [
+            { "type": "string" },
+            {
+              "type": "array",
+              "items": {
+                "oneOf": [
+                  { "type": "string" },
+                  { "$ref": "#/definitions/rawExpression" }
+                ]
+              }
+            }
+          ]
+        }
+      },
+      "required": ["addSelect"],
+      "additionalProperties": false
+    },
+    "distinctAction": {
+      "type": "object",
+      "description": "Add DISTINCT to the query.\n\n[qb docs](https://qb.ortusbooks.com/query-builder/building-queries/selects#distinct)",
+      "properties": {
+        "distinct": {
+          "type": "boolean",
+          "const": true,
+          "description": "Set to true to add DISTINCT"
+        }
+      },
+      "required": ["distinct"],
+      "additionalProperties": false
+    },
+    "selectRawAction": {
+      "type": "object",
+      "description": "Add a raw SQL expression to the SELECT clause.\n\n[qb docs](https://qb.ortusbooks.com/query-builder/building-queries/selects#selectraw)",
+      "properties": {
+        "selectRaw": {
+          "oneOf": [
+            {
+              "type": "string",
+              "description": "Raw SQL expression",
+              "examples": ["COUNT(*) as total", "SUM(amount) as sum_amount"]
+            },
+            {
+              "type": "array",
+              "description": "[sql, bindings] array",
+              "items": [
+                { "type": "string", "description": "SQL with ? placeholders" },
+                { "type": "array", "description": "Binding values" }
+              ],
+              "minItems": 1,
+              "maxItems": 2
+            }
+          ]
+        }
+      },
+      "required": ["selectRaw"],
+      "additionalProperties": false
+    },
+    "subSelectAction": {
+      "type": "object",
+      "description": "Add a scalar subquery to the SELECT clause.\n\n[qb docs](https://qb.ortusbooks.com/query-builder/building-queries/selects#subselect)",
+      "properties": {
+        "subSelect": {
+          "oneOf": [
+            { "type": "string", "description": "Alias for the subquery result" },
+            {
+              "type": "object",
+              "properties": {
+                "alias": { "type": "string" }
+              },
+              "required": ["alias"]
+            }
+          ]
+        },
+        "query": {
+          "$ref": "#/definitions/subquery"
+        },
+        "alias": { "type": "string" }
+      },
+      "required": ["subSelect", "query"],
+      "additionalProperties": false
+    },
+    "selectAggregateAction": {
+      "type": "object",
+      "description": "Add an aggregate function to the SELECT clause.\n\n[qb docs](https://qb.ortusbooks.com/query-builder/building-queries/aggregates)",
+      "properties": {
+        "selectCount": { "$ref": "#/definitions/aggregateValue" },
+        "selectSum": { "$ref": "#/definitions/aggregateValue" },
+        "selectAvg": { "$ref": "#/definitions/aggregateValue" },
+        "selectMin": { "$ref": "#/definitions/aggregateValue" },
+        "selectMax": { "$ref": "#/definitions/aggregateValue" }
+      },
+      "oneOf": [
+        { "required": ["selectCount"] },
+        { "required": ["selectSum"] },
+        { "required": ["selectAvg"] },
+        { "required": ["selectMin"] },
+        { "required": ["selectMax"] }
+      ],
+      "additionalProperties": false
+    },
+    "aggregateValue": {
+      "oneOf": [
+        { "type": "string", "description": "Column name" },
+        {
+          "type": "array",
+          "description": "[column, alias]",
+          "items": [
+            { "type": "string" },
+            { "type": "string" }
+          ],
+          "minItems": 1,
+          "maxItems": 2
+        }
+      ]
+    },
+    "whereAction": {
+      "description": "WHERE conditions filter query results.\n\n[qb docs](https://qb.ortusbooks.com/query-builder/building-queries/wheres)",
+      "oneOf": [
+        { "$ref": "#/definitions/whereBasic" },
+        { "$ref": "#/definitions/whereIn" },
+        { "$ref": "#/definitions/whereBetween" },
+        { "$ref": "#/definitions/whereLike" },
+        { "$ref": "#/definitions/whereNull" },
+        { "$ref": "#/definitions/whereColumn" },
+        { "$ref": "#/definitions/whereExists" },
+        { "$ref": "#/definitions/whereRaw" }
+      ]
+    },
+    "whereBasic": {
+      "type": "object",
+      "description": "**WHERE - Basic Comparison**\n\nFilters results using column comparisons.\n\n**Variants:**\n- `where` - Basic WHERE clause\n- `andWhere` - AND conjunction\n- `orWhere` - OR conjunction\n\n**Simple comparison:**\n```json\n{ \"where\": [\"status\", \"active\"] }\n```\n\n**With operator:**\n```json\n{ \"where\": [\"age\", \">\", 18] }\n```\n\n[qb docs](https://qb.ortusbooks.com/query-builder/building-queries/wheres#simple-where-clauses)",
+      "properties": {
+        "where": { "$ref": "#/definitions/whereClauseValue" },
+        "andWhere": { "$ref": "#/definitions/whereClauseValue" },
+        "orWhere": { "$ref": "#/definitions/whereClauseValue" },
+        "when": { "$ref": "#/definitions/whenCondition" },
+        "else": { "$ref": "#/definitions/elseClause" }
+      },
+      "oneOf": [
+        { "required": ["where"] },
+        { "required": ["andWhere"] },
+        { "required": ["orWhere"] }
+      ],
+      "additionalProperties": false
+    },
+    "whereClauseValue": {
+      "description": "WHERE clause value",
+      "oneOf": [
+        {
+          "type": "array",
+          "description": "Array format: [column, value] or [column, operator, value]",
+          "items": [
+            { "oneOf": [{ "type": "string" }, { "$ref": "#/definitions/paramRef" }] },
+            { "$ref": "#/definitions/anyValue" },
+            { "$ref": "#/definitions/anyValue" }
+          ],
+          "minItems": 2,
+          "maxItems": 3
+        },
+        {
+          "type": "array",
+          "description": "Nested WHERE clauses",
+          "items": {
+            "$ref": "#/definitions/whereAction"
+          },
+          "minItems": 1
+        },
+        {
+          "type": "object",
+          "description": "Object format: { column, operator?, value }",
+          "properties": {
+            "column": { "type": "string" },
+            "operator": { "$ref": "#/definitions/operator" },
+            "value": { "$ref": "#/definitions/anyValue" }
+          },
+          "required": ["column", "value"]
+        }
+      ]
+    },
+    "whereIn": {
+      "type": "object",
+      "description": "**WHERE IN - Filter by Multiple Values**\n\n**Example:**\n```json\n{ \"whereIn\": [\"status\", [\"active\", \"pending\"]] }\n```\n\n[qb docs](https://qb.ortusbooks.com/query-builder/building-queries/wheres#wherein)",
+      "properties": {
+        "whereIn": { "$ref": "#/definitions/whereInValue" },
+        "whereNotIn": { "$ref": "#/definitions/whereInValue" },
+        "andWhereIn": { "$ref": "#/definitions/whereInValue" },
+        "andWhereNotIn": { "$ref": "#/definitions/whereInValue" },
+        "orWhereIn": { "$ref": "#/definitions/whereInValue" },
+        "orWhereNotIn": { "$ref": "#/definitions/whereInValue" },
+        "when": { "$ref": "#/definitions/whenCondition" },
+        "else": { "$ref": "#/definitions/elseClause" }
+      },
+      "oneOf": [
+        { "required": ["whereIn"] },
+        { "required": ["whereNotIn"] },
+        { "required": ["andWhereIn"] },
+        { "required": ["andWhereNotIn"] },
+        { "required": ["orWhereIn"] },
+        { "required": ["orWhereNotIn"] }
+      ],
+      "additionalProperties": false
+    },
+    "whereInValue": {
+      "oneOf": [
+        {
+          "type": "array",
+          "items": [
+            { "type": "string" },
+            {
+              "oneOf": [
+                { "type": "array" },
+                { "$ref": "#/definitions/paramRef" },
+                { "$ref": "#/definitions/rawExpression" }
+              ]
+            }
+          ],
+          "minItems": 2,
+          "maxItems": 2
+        },
+        {
+          "type": "object",
+          "properties": {
+            "column": { "type": "string" },
+            "values": {
+              "oneOf": [
+                { "type": "array" },
+                { "$ref": "#/definitions/paramRef" },
+                { "$ref": "#/definitions/rawExpression" }
+              ]
+            }
+          },
+          "required": ["column", "values"]
+        }
+      ]
+    },
+    "whereBetween": {
+      "type": "object",
+      "description": "**WHERE BETWEEN - Range Filter**\n\n```json\n{ \"whereBetween\": [\"price\", 10, 100] }\n```\n\n[qb docs](https://qb.ortusbooks.com/query-builder/building-queries/wheres#wherebetween)",
+      "properties": {
+        "whereBetween": { "$ref": "#/definitions/whereBetweenValue" },
+        "whereNotBetween": { "$ref": "#/definitions/whereBetweenValue" },
+        "andWhereBetween": { "$ref": "#/definitions/whereBetweenValue" },
+        "andWhereNotBetween": { "$ref": "#/definitions/whereBetweenValue" },
+        "orWhereBetween": { "$ref": "#/definitions/whereBetweenValue" },
+        "orWhereNotBetween": { "$ref": "#/definitions/whereBetweenValue" },
+        "when": { "$ref": "#/definitions/whenCondition" },
+        "else": { "$ref": "#/definitions/elseClause" }
+      },
+      "oneOf": [
+        { "required": ["whereBetween"] },
+        { "required": ["whereNotBetween"] },
+        { "required": ["andWhereBetween"] },
+        { "required": ["andWhereNotBetween"] },
+        { "required": ["orWhereBetween"] },
+        { "required": ["orWhereNotBetween"] }
+      ],
+      "additionalProperties": false
+    },
+    "whereBetweenValue": {
+      "oneOf": [
+        {
+          "type": "array",
+          "items": [
+            { "type": "string" },
+            { "$ref": "#/definitions/anyValue" },
+            { "$ref": "#/definitions/anyValue" }
+          ],
+          "minItems": 3,
+          "maxItems": 3
+        },
+        {
+          "type": "object",
+          "properties": {
+            "column": { "type": "string" },
+            "start": { "$ref": "#/definitions/anyValue" },
+            "end": { "$ref": "#/definitions/anyValue" }
+          },
+          "required": ["column", "start", "end"]
+        }
+      ]
+    },
+    "whereLike": {
+      "type": "object",
+      "description": "**WHERE LIKE - Pattern Matching**\n\n```json\n{ \"whereLike\": [\"name\", \"%john%\"] }\n```\n\n[qb docs](https://qb.ortusbooks.com/query-builder/building-queries/wheres#wherelike)",
+      "properties": {
+        "whereLike": { "$ref": "#/definitions/whereLikeValue" },
+        "whereNotLike": { "$ref": "#/definitions/whereLikeValue" },
+        "andWhereLike": { "$ref": "#/definitions/whereLikeValue" },
+        "andWhereNotLike": { "$ref": "#/definitions/whereLikeValue" },
+        "orWhereLike": { "$ref": "#/definitions/whereLikeValue" },
+        "orWhereNotLike": { "$ref": "#/definitions/whereLikeValue" },
+        "when": { "$ref": "#/definitions/whenCondition" },
+        "else": { "$ref": "#/definitions/elseClause" }
+      },
+      "oneOf": [
+        { "required": ["whereLike"] },
+        { "required": ["whereNotLike"] },
+        { "required": ["andWhereLike"] },
+        { "required": ["andWhereNotLike"] },
+        { "required": ["orWhereLike"] },
+        { "required": ["orWhereNotLike"] }
+      ],
+      "additionalProperties": false
+    },
+    "whereLikeValue": {
+      "oneOf": [
+        {
+          "type": "array",
+          "items": [
+            { "type": "string" },
+            { "$ref": "#/definitions/anyValue" }
+          ],
+          "minItems": 2,
+          "maxItems": 2
+        },
+        {
+          "type": "object",
+          "properties": {
+            "column": { "type": "string" },
+            "value": { "$ref": "#/definitions/anyValue" }
+          },
+          "required": ["column", "value"]
+        }
+      ]
+    },
+    "whereNull": {
+      "type": "object",
+      "description": "**WHERE NULL**\n\n```json\n{ \"whereNull\": \"deleted_at\" }\n```\n\n[qb docs](https://qb.ortusbooks.com/query-builder/building-queries/wheres#wherenull)",
+      "properties": {
+        "whereNull": { "$ref": "#/definitions/whereNullValue" },
+        "whereNotNull": { "$ref": "#/definitions/whereNullValue" },
+        "andWhereNull": { "$ref": "#/definitions/whereNullValue" },
+        "andWhereNotNull": { "$ref": "#/definitions/whereNullValue" },
+        "orWhereNull": { "$ref": "#/definitions/whereNullValue" },
+        "orWhereNotNull": { "$ref": "#/definitions/whereNullValue" },
+        "when": { "$ref": "#/definitions/whenCondition" },
+        "else": { "$ref": "#/definitions/elseClause" }
+      },
+      "oneOf": [
+        { "required": ["whereNull"] },
+        { "required": ["whereNotNull"] },
+        { "required": ["andWhereNull"] },
+        { "required": ["andWhereNotNull"] },
+        { "required": ["orWhereNull"] },
+        { "required": ["orWhereNotNull"] }
+      ],
+      "additionalProperties": false
+    },
+    "whereNullValue": {
+      "oneOf": [
+        { "type": "string" },
+        {
+          "type": "object",
+          "properties": {
+            "column": { "type": "string" }
+          },
+          "required": ["column"]
+        }
+      ]
+    },
+    "whereColumn": {
+      "type": "object",
+      "description": "Compare two columns.\n\n[qb docs](https://qb.ortusbooks.com/query-builder/building-queries/wheres#wherecolumn)",
+      "properties": {
+        "whereColumn": { "$ref": "#/definitions/whereColumnValue" },
+        "andWhereColumn": { "$ref": "#/definitions/whereColumnValue" },
+        "orWhereColumn": { "$ref": "#/definitions/whereColumnValue" },
+        "when": { "$ref": "#/definitions/whenCondition" },
+        "else": { "$ref": "#/definitions/elseClause" }
+      },
+      "oneOf": [
+        { "required": ["whereColumn"] },
+        { "required": ["andWhereColumn"] },
+        { "required": ["orWhereColumn"] }
+      ],
+      "additionalProperties": false
+    },
+    "whereColumnValue": {
+      "oneOf": [
+        {
+          "type": "array",
+          "items": [
+            { "type": "string" },
+            { "type": "string" },
+            { "type": "string" }
+          ],
+          "minItems": 2,
+          "maxItems": 3
+        },
+        {
+          "type": "object",
+          "properties": {
+            "first": { "type": "string" },
+            "operator": { "$ref": "#/definitions/operator" },
+            "second": { "type": "string" }
+          },
+          "required": ["first", "second"]
+        }
+      ]
+    },
+    "whereExists": {
+      "type": "object",
+      "description": "WHERE EXISTS (subquery).\n\n[qb docs](https://qb.ortusbooks.com/query-builder/building-queries/wheres#whereexists)",
+      "properties": {
+        "whereExists": { "type": "boolean", "const": true },
+        "whereNotExists": { "type": "boolean", "const": true },
+        "andWhereExists": { "type": "boolean", "const": true },
+        "andWhereNotExists": { "type": "boolean", "const": true },
+        "orWhereExists": { "type": "boolean", "const": true },
+        "orWhereNotExists": { "type": "boolean", "const": true },
+        "query": { "$ref": "#/definitions/subquery" },
+        "when": { "$ref": "#/definitions/whenCondition" },
+        "else": { "$ref": "#/definitions/elseClause" }
+      },
+      "required": ["query"],
+      "oneOf": [
+        { "required": ["whereExists"] },
+        { "required": ["whereNotExists"] },
+        { "required": ["andWhereExists"] },
+        { "required": ["andWhereNotExists"] },
+        { "required": ["orWhereExists"] },
+        { "required": ["orWhereNotExists"] }
+      ],
+      "additionalProperties": false
+    },
+    "whereRaw": {
+      "type": "object",
+      "description": "Raw SQL WHERE expression.\n\n[qb docs](https://qb.ortusbooks.com/query-builder/building-queries/wheres#whereraw)",
+      "properties": {
+        "whereRaw": { "$ref": "#/definitions/rawValue" },
+        "andWhereRaw": { "$ref": "#/definitions/rawValue" },
+        "orWhereRaw": { "$ref": "#/definitions/rawValue" },
+        "when": { "$ref": "#/definitions/whenCondition" },
+        "else": { "$ref": "#/definitions/elseClause" }
+      },
+      "oneOf": [
+        { "required": ["whereRaw"] },
+        { "required": ["andWhereRaw"] },
+        { "required": ["orWhereRaw"] }
+      ],
+      "additionalProperties": false
+    },
+    "joinAction": {
+      "description": "**JOIN - Combine Tables**\n\n[qb docs](https://qb.ortusbooks.com/query-builder/building-queries/joins)",
+      "oneOf": [
+        { "$ref": "#/definitions/simpleJoin" },
+        { "$ref": "#/definitions/joinSubAction" },
+        { "$ref": "#/definitions/joinRawAction" },
+        { "$ref": "#/definitions/crossJoinAction" }
+      ]
+    },
+    "simpleJoin": {
+      "type": "object",
+      "description": "Join tables with column conditions.\n\n[qb docs](https://qb.ortusbooks.com/query-builder/building-queries/joins)",
+      "properties": {
+        "join": { "$ref": "#/definitions/joinValue" },
+        "innerJoin": { "$ref": "#/definitions/joinValue" },
+        "leftJoin": { "$ref": "#/definitions/joinValue" },
+        "rightJoin": { "$ref": "#/definitions/joinValue" },
+        "leftOuterJoin": { "$ref": "#/definitions/joinValue" },
+        "rightOuterJoin": { "$ref": "#/definitions/joinValue" },
+        "on": {
+          "type": "array",
+          "items": { "$ref": "#/definitions/onClause" }
+        }
+      },
+      "oneOf": [
+        { "required": ["join"] },
+        { "required": ["innerJoin"] },
+        { "required": ["leftJoin"] },
+        { "required": ["rightJoin"] },
+        { "required": ["leftOuterJoin"] },
+        { "required": ["rightOuterJoin"] }
+      ],
+      "additionalProperties": false
+    },
+    "joinValue": {
+      "oneOf": [
+        { "type": "string" },
+        {
+          "type": "array",
+          "items": [
+            { "type": "string" },
+            { "type": "string" },
+            { "type": "string" },
+            { "type": "string" }
+          ],
+          "minItems": 3,
+          "maxItems": 4
+        },
+        {
+          "type": "object",
+          "properties": {
+            "table": { "type": "string" },
+            "first": { "type": "string" },
+            "operator": { "$ref": "#/definitions/operator" },
+            "second": { "type": "string" }
+          },
+          "required": ["table"]
+        }
+      ]
+    },
+    "onClause": {
+      "type": "object",
+      "properties": {
+        "on": { "$ref": "#/definitions/onValue" },
+        "andOn": { "$ref": "#/definitions/onValue" },
+        "orOn": { "$ref": "#/definitions/onValue" }
+      },
+      "oneOf": [
+        { "required": ["on"] },
+        { "required": ["andOn"] },
+        { "required": ["orOn"] }
+      ],
+      "additionalProperties": false
+    },
+    "onValue": {
+      "type": "array",
+      "items": [
+        { "type": "string" },
+        { "type": "string" },
+        { "type": "string" }
+      ],
+      "minItems": 3,
+      "maxItems": 3
+    },
+    "joinSubAction": {
+      "type": "object",
+      "description": "Join with a subquery.\n\n[qb docs](https://qb.ortusbooks.com/query-builder/building-queries/joins#joinsub)",
+      "properties": {
+        "joinSub": { "type": "string" },
+        "leftJoinSub": { "type": "string" },
+        "rightJoinSub": { "type": "string" },
+        "query": { "$ref": "#/definitions/subquery" },
+        "on": {
+          "type": "array",
+          "items": { "$ref": "#/definitions/onClause" }
+        },
+        "alias": { "type": "string" }
+      },
+      "oneOf": [
+        { "required": ["joinSub", "query"] },
+        { "required": ["leftJoinSub", "query"] },
+        { "required": ["rightJoinSub", "query"] }
+      ],
+      "additionalProperties": false
+    },
+    "joinRawAction": {
+      "type": "object",
+      "description": "Join with a raw table expression.\n\n[qb docs](https://qb.ortusbooks.com/query-builder/building-queries/joins#joinraw)",
+      "properties": {
+        "joinRaw": { "$ref": "#/definitions/joinRawValue" },
+        "leftJoinRaw": { "$ref": "#/definitions/joinRawValue" },
+        "rightJoinRaw": { "$ref": "#/definitions/joinRawValue" }
+      },
+      "oneOf": [
+        { "required": ["joinRaw"] },
+        { "required": ["leftJoinRaw"] },
+        { "required": ["rightJoinRaw"] }
+      ],
+      "additionalProperties": false
+    },
+    "joinRawValue": {
+      "type": "array",
+      "items": { "type": "string" },
+      "minItems": 1,
+      "maxItems": 4
+    },
+    "crossJoinAction": {
+      "type": "object",
+      "description": "CROSS JOIN (cartesian product).\n\n[qb docs](https://qb.ortusbooks.com/query-builder/building-queries/joins#crossjoin)",
+      "properties": {
+        "crossJoin": { "type": "string" }
+      },
+      "required": ["crossJoin"],
+      "additionalProperties": false
+    },
+    "groupAction": {
+      "description": "**GROUP BY & HAVING**\n\n[qb docs](https://qb.ortusbooks.com/query-builder/building-queries/group-by-and-having)",
+      "oneOf": [
+        { "$ref": "#/definitions/groupByAction" },
+        { "$ref": "#/definitions/havingAction" }
+      ]
+    },
+    "groupByAction": {
+      "type": "object",
+      "description": "GROUP BY columns.\n\n[qb docs](https://qb.ortusbooks.com/query-builder/building-queries/group-by-and-having#groupby)",
+      "properties": {
+        "groupBy": {
+          "oneOf": [
+            { "type": "string" },
+            { "type": "array", "items": { "type": "string" } },
+            {
+              "type": "object",
+              "properties": {
+                "columns": {
+                  "oneOf": [
+                    { "type": "string" },
+                    { "type": "array", "items": { "type": "string" } }
+                  ]
+                },
+                "column": { "type": "string" }
+              }
+            }
+          ]
+        }
+      },
+      "required": ["groupBy"],
+      "additionalProperties": false
+    },
+    "havingAction": {
+      "type": "object",
+      "description": "HAVING conditions.\n\n[qb docs](https://qb.ortusbooks.com/query-builder/building-queries/group-by-and-having#having)",
+      "properties": {
+        "having": { "$ref": "#/definitions/havingValue" },
+        "andHaving": { "$ref": "#/definitions/havingValue" },
+        "orHaving": { "$ref": "#/definitions/havingValue" },
+        "havingRaw": { "$ref": "#/definitions/rawValue" }
+      },
+      "oneOf": [
+        { "required": ["having"] },
+        { "required": ["andHaving"] },
+        { "required": ["orHaving"] },
+        { "required": ["havingRaw"] }
+      ],
+      "additionalProperties": false
+    },
+    "havingValue": {
+      "oneOf": [
+        {
+          "type": "array",
+          "items": [
+            { "type": "string" },
+            { "type": "string" },
+            { "$ref": "#/definitions/anyValue" }
+          ],
+          "minItems": 3,
+          "maxItems": 3
+        },
+        {
+          "type": "object",
+          "properties": {
+            "column": { "type": "string" },
+            "operator": { "$ref": "#/definitions/operator" },
+            "value": { "$ref": "#/definitions/anyValue" }
+          },
+          "required": ["column", "value"]
+        }
+      ]
+    },
+    "orderAction": {
+      "description": "**ORDER BY - Sort Results**\n\n[qb docs](https://qb.ortusbooks.com/query-builder/building-queries/ordering-grouping-and-limit#orderby)",
+      "oneOf": [
+        { "$ref": "#/definitions/orderByAction" },
+        { "$ref": "#/definitions/orderByDirectionAction" },
+        { "$ref": "#/definitions/orderByRawAction" },
+        { "$ref": "#/definitions/reorderAction" },
+        { "$ref": "#/definitions/clearOrdersAction" }
+      ]
+    },
+    "orderByAction": {
+      "type": "object",
+      "description": "Order results by column.\n\n[qb docs](https://qb.ortusbooks.com/query-builder/building-queries/ordering-grouping-and-limit#orderby)",
+      "properties": {
+        "orderBy": {
+          "oneOf": [
+            { "type": "string" },
+            {
+              "type": "array",
+              "items": [
+                { "type": "string" },
+                { "$ref": "#/definitions/sortDirection" }
+              ],
+              "minItems": 1,
+              "maxItems": 2
+            },
+            {
+              "type": "object",
+              "properties": {
+                "column": { "type": "string" },
+                "direction": { "$ref": "#/definitions/sortDirection" }
+              },
+              "required": ["column"]
+            }
+          ]
+        }
+      },
+      "required": ["orderBy"],
+      "additionalProperties": false
+    },
+    "orderByDirectionAction": {
+      "type": "object",
+      "properties": {
+        "orderByDesc": { "type": "string" },
+        "orderByAsc": { "type": "string" }
+      },
+      "oneOf": [
+        { "required": ["orderByDesc"] },
+        { "required": ["orderByAsc"] }
+      ],
+      "additionalProperties": false
+    },
+    "orderByRawAction": {
+      "type": "object",
+      "properties": {
+        "orderByRaw": { "$ref": "#/definitions/rawValue" }
+      },
+      "required": ["orderByRaw"],
+      "additionalProperties": false
+    },
+    "reorderAction": {
+      "type": "object",
+      "properties": {
+        "reorder": { "type": "boolean", "const": true }
+      },
+      "required": ["reorder"],
+      "additionalProperties": false
+    },
+    "clearOrdersAction": {
+      "type": "object",
+      "properties": {
+        "clearOrders": { "type": "boolean", "const": true }
+      },
+      "required": ["clearOrders"],
+      "additionalProperties": false
+    },
+    "limitAction": {
+      "description": "**LIMIT & OFFSET**\n\n[qb docs](https://qb.ortusbooks.com/query-builder/building-queries/ordering-grouping-and-limit#limit)",
+      "oneOf": [
+        { "$ref": "#/definitions/limitClause" },
+        { "$ref": "#/definitions/offsetClause" },
+        { "$ref": "#/definitions/forPageClause" }
+      ]
+    },
+    "limitClause": {
+      "type": "object",
+      "properties": {
+        "limit": {
+          "oneOf": [
+            { "type": "integer", "minimum": 0 },
+            {
+              "type": "object",
+              "properties": { "value": { "type": "integer", "minimum": 0 } },
+              "required": ["value"]
+            }
+          ]
+        },
+        "take": {
+          "oneOf": [
+            { "type": "integer", "minimum": 0 },
+            {
+              "type": "object",
+              "properties": { "value": { "type": "integer", "minimum": 0 } },
+              "required": ["value"]
+            }
+          ]
+        }
+      },
+      "oneOf": [
+        { "required": ["limit"] },
+        { "required": ["take"] }
+      ],
+      "additionalProperties": false
+    },
+    "offsetClause": {
+      "type": "object",
+      "properties": {
+        "offset": {
+          "oneOf": [
+            { "type": "integer", "minimum": 0 },
+            {
+              "type": "object",
+              "properties": { "value": { "type": "integer", "minimum": 0 } },
+              "required": ["value"]
+            }
+          ]
+        },
+        "skip": {
+          "oneOf": [
+            { "type": "integer", "minimum": 0 },
+            {
+              "type": "object",
+              "properties": { "value": { "type": "integer", "minimum": 0 } },
+              "required": ["value"]
+            }
+          ]
+        }
+      },
+      "oneOf": [
+        { "required": ["offset"] },
+        { "required": ["skip"] }
+      ],
+      "additionalProperties": false
+    },
+    "forPageClause": {
+      "type": "object",
+      "properties": {
+        "forPage": {
+          "oneOf": [
+            {
+              "type": "array",
+              "items": [
+                { "type": "integer", "minimum": 1 },
+                { "type": "integer", "minimum": 1 }
+              ],
+              "minItems": 2,
+              "maxItems": 2
+            },
+            {
+              "type": "object",
+              "properties": {
+                "page": { "type": "integer", "minimum": 1 },
+                "size": { "type": "integer", "minimum": 1 }
+              },
+              "required": ["page", "size"]
+            }
+          ]
+        }
+      },
+      "required": ["forPage"],
+      "additionalProperties": false
+    },
+    "lockAction": {
+      "description": "Row locking.\n\n[qb docs](https://qb.ortusbooks.com/query-builder/building-queries/locks)",
+      "oneOf": [
+        { "$ref": "#/definitions/lockClause" },
+        { "$ref": "#/definitions/lockForUpdateClause" },
+        { "$ref": "#/definitions/sharedLockClause" },
+        { "$ref": "#/definitions/noLockClause" },
+        { "$ref": "#/definitions/clearLockClause" }
+      ]
+    },
+    "lockClause": {
+      "type": "object",
+      "properties": {
+        "lock": { "type": "string" }
+      },
+      "required": ["lock"],
+      "additionalProperties": false
+    },
+    "lockForUpdateClause": {
+      "type": "object",
+      "properties": {
+        "lockForUpdate": {
+          "oneOf": [
+            { "type": "boolean", "const": true },
+            {
+              "type": "object",
+              "properties": {
+                "skipLocked": { "type": "boolean" }
+              },
+              "additionalProperties": false
+            }
+          ]
+        }
+      },
+      "required": ["lockForUpdate"],
+      "additionalProperties": false
+    },
+    "sharedLockClause": {
+      "type": "object",
+      "properties": {
+        "sharedLock": { "type": "boolean", "const": true }
+      },
+      "required": ["sharedLock"],
+      "additionalProperties": false
+    },
+    "noLockClause": {
+      "type": "object",
+      "properties": {
+        "noLock": { "type": "boolean", "const": true }
+      },
+      "required": ["noLock"],
+      "additionalProperties": false
+    },
+    "clearLockClause": {
+      "type": "object",
+      "properties": {
+        "clearLock": { "type": "boolean", "const": true }
+      },
+      "required": ["clearLock"],
+      "additionalProperties": false
+    },
+    "cteAction": {
+      "type": "object",
+      "description": "**WITH - Common Table Expression (CTE)**\n\n[qb docs](https://qb.ortusbooks.com/query-builder/building-queries/common-table-expressions-ctes)",
+      "properties": {
+        "with": { "type": "string" },
+        "withRecursive": { "type": "string" },
+        "query": { "$ref": "#/definitions/subquery" }
+      },
+      "oneOf": [
+        { "required": ["with", "query"] },
+        { "required": ["withRecursive", "query"] }
+      ],
+      "additionalProperties": false
+    },
+    "unionAction": {
+      "type": "object",
+      "description": "**UNION - Combine Result Sets**\n\n[qb docs](https://qb.ortusbooks.com/query-builder/building-queries/unions)",
+      "properties": {
+        "union": { "type": "boolean", "const": true },
+        "unionAll": { "type": "boolean", "const": true },
+        "query": { "$ref": "#/definitions/subquery" }
+      },
+      "oneOf": [
+        { "required": ["union", "query"] },
+        { "required": ["unionAll", "query"] }
+      ],
+      "additionalProperties": false
+    },
+    "executorAction": {
+      "description": "**Executors - Query Execution Methods**\n\n[qb docs](https://qb.ortusbooks.com/query-builder/executing-queries)",
+      "oneOf": [
+        { "$ref": "#/definitions/getExecutor" },
+        { "$ref": "#/definitions/firstExecutor" },
+        { "$ref": "#/definitions/findExecutor" },
+        { "$ref": "#/definitions/valueExecutor" },
+        { "$ref": "#/definitions/valuesExecutor" },
+        { "$ref": "#/definitions/aggregateExecutor" },
+        { "$ref": "#/definitions/existsExecutor" },
+        { "$ref": "#/definitions/paginateExecutor" },
+        { "$ref": "#/definitions/toSQLExecutor" },
+        { "$ref": "#/definitions/dumpExecutor" }
+      ]
+    },
+    "getExecutor": {
+      "type": "object",
+      "description": "**get - Return All Results**\n\n```json\n{ \"get\": true }\n```\n\n[qb docs](https://qb.ortusbooks.com/query-builder/executing-queries#get)",
+      "properties": {
+        "get": {
+          "oneOf": [
+            { "type": "boolean", "const": true },
+            {
+              "type": "object",
+              "properties": {
+                "returnFormat": { "type": "string", "enum": ["array", "tabular"] },
+                "autoSort": { "type": "boolean" }
+              }
+            }
+          ]
+        },
+        "datasource": { "type": "string" },
+        "timeout": { "type": "integer", "minimum": 0 },
+        "username": { "type": "string" },
+        "password": { "type": "string" }
+      },
+      "required": ["get"],
+      "additionalProperties": false
+    },
+    "firstExecutor": {
+      "type": "object",
+      "description": "**first - Return First Row Only**\n\n[qb docs](https://qb.ortusbooks.com/query-builder/executing-queries#first)",
+      "properties": {
+        "first": { "type": "boolean", "const": true },
+        "datasource": { "type": "string" },
+        "timeout": { "type": "integer", "minimum": 0 }
+      },
+      "required": ["first"],
+      "additionalProperties": false
+    },
+    "findExecutor": {
+      "type": "object",
+      "description": "Find a record by ID.\n\n[qb docs](https://qb.ortusbooks.com/query-builder/executing-queries#find)",
+      "properties": {
+        "find": {
+          "oneOf": [
+            { "type": "integer" },
+            { "type": "string" },
+            {
+              "type": "array",
+              "items": [
+                { "oneOf": [{ "type": "integer" }, { "type": "string" }] },
+                { "type": "string" }
+              ],
+              "minItems": 1,
+              "maxItems": 2
+            }
+          ]
+        },
+        "datasource": { "type": "string" },
+        "timeout": { "type": "integer", "minimum": 0 }
+      },
+      "required": ["find"],
+      "additionalProperties": false
+    },
+    "valueExecutor": {
+      "type": "object",
+      "properties": {
+        "value": { "type": "string" },
+        "datasource": { "type": "string" },
+        "timeout": { "type": "integer", "minimum": 0 }
+      },
+      "required": ["value"],
+      "additionalProperties": false
+    },
+    "valuesExecutor": {
+      "type": "object",
+      "properties": {
+        "values": { "type": "string" },
+        "datasource": { "type": "string" },
+        "timeout": { "type": "integer", "minimum": 0 }
+      },
+      "required": ["values"],
+      "additionalProperties": false
+    },
+    "aggregateExecutor": {
+      "type": "object",
+      "properties": {
+        "count": { "oneOf": [{ "type": "boolean", "const": true }, { "type": "string" }] },
+        "sum": { "type": "string" },
+        "avg": { "type": "string" },
+        "min": { "type": "string" },
+        "max": { "type": "string" },
+        "datasource": { "type": "string" },
+        "timeout": { "type": "integer", "minimum": 0 }
+      },
+      "oneOf": [
+        { "required": ["count"] },
+        { "required": ["sum"] },
+        { "required": ["avg"] },
+        { "required": ["min"] },
+        { "required": ["max"] }
+      ],
+      "additionalProperties": false
+    },
+    "existsExecutor": {
+      "type": "object",
+      "properties": {
+        "exists": { "type": "boolean", "const": true },
+        "datasource": { "type": "string" },
+        "timeout": { "type": "integer", "minimum": 0 }
+      },
+      "required": ["exists"],
+      "additionalProperties": false
+    },
+    "paginateExecutor": {
+      "type": "object",
+      "description": "**paginate - Return Paginated Results**\n\n```json\n{ \"paginate\": { \"page\": 1, \"maxRows\": 25 } }\n```\n\n[qb docs](https://qb.ortusbooks.com/query-builder/executing-queries#paginate)",
+      "properties": {
+        "paginate": {
+          "type": "object",
+          "properties": {
+            "page": { "type": "integer", "minimum": 1, "default": 1 },
+            "maxRows": { "type": "integer", "minimum": 1, "default": 25 },
+            "size": { "type": "integer", "minimum": 1 },
+            "returnFormat": { "type": "string", "enum": ["array", "tabular"] },
+            "autoSort": { "type": "boolean" }
+          }
+        },
+        "simplePaginate": {
+          "type": "object",
+          "properties": {
+            "page": { "type": "integer", "minimum": 1, "default": 1 },
+            "maxRows": { "type": "integer", "minimum": 1, "default": 25 },
+            "size": { "type": "integer", "minimum": 1 },
+            "returnFormat": { "type": "string", "enum": ["array", "tabular"] },
+            "autoSort": { "type": "boolean" }
+          }
+        },
+        "datasource": { "type": "string" },
+        "timeout": { "type": "integer", "minimum": 0 }
+      },
+      "oneOf": [
+        { "required": ["paginate"] },
+        { "required": ["simplePaginate"] }
+      ],
+      "additionalProperties": false
+    },
+    "toSQLExecutor": {
+      "type": "object",
+      "properties": {
+        "toSQL": { "type": "boolean", "const": true }
+      },
+      "required": ["toSQL"],
+      "additionalProperties": false
+    },
+    "dumpExecutor": {
+      "type": "object",
+      "properties": {
+        "dump": { "type": "boolean", "const": true }
+      },
+      "required": ["dump"],
+      "additionalProperties": false
+    },
+    "subquery": {
+      "type": "array",
+      "items": { "$ref": "#/definitions/action" },
+      "minItems": 1
+    },
+    "paramRef": {
+      "type": "object",
+      "description": "**$param - Runtime Parameter Reference**",
+      "properties": {
+        "$param": { "type": "string" }
+      },
+      "required": ["$param"],
+      "additionalProperties": false
+    },
+    "rawExpression": {
+      "type": "object",
+      "description": "**$raw - Raw SQL Expression**",
+      "properties": {
+        "$raw": {
+          "oneOf": [
+            { "type": "string" },
+            {
+              "type": "object",
+              "properties": {
+                "sql": { "type": "string" },
+                "bindings": { "type": "array" }
+              },
+              "required": ["sql"]
+            }
+          ]
+        }
+      },
+      "required": ["$raw"],
+      "additionalProperties": false
+    },
+    "whenCondition": {
+      "oneOf": [
+        { "type": "string", "enum": ["hasValues", "notEmpty", "isEmpty"] },
+        { "$ref": "#/definitions/paramCondition" },
+        { "$ref": "#/definitions/comparisonCondition" },
+        { "$ref": "#/definitions/logicalCondition" }
+      ]
+    },
+    "paramCondition": {
+      "type": "object",
+      "properties": {
+        "param": { "type": "string" },
+        "notEmpty": { "type": "boolean" },
+        "isEmpty": { "type": "boolean" },
+        "hasValue": { "type": "boolean" },
+        "gt": {},
+        "gte": {},
+        "lt": {},
+        "lte": {},
+        "eq": {},
+        "neq": {}
+      },
+      "required": ["param"]
+    },
+    "comparisonCondition": {
+      "type": "object",
+      "properties": {
+        "notEmpty": { "oneOf": [{ "type": "boolean" }, { "type": "integer", "minimum": 1 }] },
+        "isEmpty": { "oneOf": [{ "type": "boolean" }, { "type": "integer", "minimum": 1 }] },
+        "gt": { "type": "array", "items": [{}, {}], "minItems": 2, "maxItems": 2 },
+        "gte": { "type": "array", "items": [{}, {}], "minItems": 2, "maxItems": 2 },
+        "lt": { "type": "array", "items": [{}, {}], "minItems": 2, "maxItems": 2 },
+        "lte": { "type": "array", "items": [{}, {}], "minItems": 2, "maxItems": 2 },
+        "eq": { "type": "array", "items": [{}, {}], "minItems": 2, "maxItems": 2 },
+        "neq": { "type": "array", "items": [{}, {}], "minItems": 2, "maxItems": 2 }
+      }
+    },
+    "logicalCondition": {
+      "type": "object",
+      "properties": {
+        "and": { "type": "array", "items": { "$ref": "#/definitions/whenCondition" }, "minItems": 1 },
+        "or": { "type": "array", "items": { "$ref": "#/definitions/whenCondition" }, "minItems": 1 },
+        "not": { "$ref": "#/definitions/whenCondition" }
+      },
+      "oneOf": [{ "required": ["and"] }, { "required": ["or"] }, { "required": ["not"] }]
+    },
+    "elseClause": {
+      "oneOf": [{ "$ref": "#/definitions/action" }, { "type": "array", "items": { "$ref": "#/definitions/action" } }]
+    },
+    "operator": {
+      "type": "string",
+      "enum": ["=", "<>", "!=", "<", ">", "<=", ">=", "like", "not like", "ilike", "between", "in", "not in", "is", "is not"],
+      "default": "="
+    },
+    "sortDirection": {
+      "type": "string",
+      "enum": ["asc", "desc", "ASC", "DESC"],
+      "default": "asc"
+    },
+    "rawValue": {
+      "oneOf": [
+        { "type": "string" },
+        { "type": "array", "items": [{ "type": "string" }, { "type": "array" }], "minItems": 1, "maxItems": 2 },
+        { "type": "object", "properties": { "sql": { "type": "string" }, "bindings": { "type": "array" } }, "required": ["sql"] }
+      ]
+    },
+    "anyValue": {
+      "oneOf": [
+        { "type": "string" },
+        { "type": "number" },
+        { "type": "integer" },
+        { "type": "boolean" },
+        { "type": "null" },
+        { "type": "array" },
+        { "$ref": "#/definitions/paramRef" },
+        { "$ref": "#/definitions/rawExpression" }
+      ]
+    }
+  }
+}

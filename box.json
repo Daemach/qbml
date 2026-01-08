@@ -11,8 +11,8 @@
         "URL":"https://github.com/Daemach/qbml"
     },
     "bugs":"https://github.com/Daemach/qbml/issues",
-    "shortDescription":"JSON-based query language for qb-cfml",
-    "description":"QBML (Query Builder Markup Language) translates JSON query definitions into QB queries. Store queries in databases, build them dynamically from client data, and execute with security controls.",
+    "shortDescription":"Store, share, and execute database queries as JSON",
+    "description":"Turn JSON into secure, multi-platform SQL. QBML lets you store queries in databases, hydrate them with parameterized data, and execute with table and action block/allow lists and injection protection. Perfect for report builders, dynamic dashboards, and user-defined data views.",
     "type":"modules",
     "keywords":[
         "qb",
