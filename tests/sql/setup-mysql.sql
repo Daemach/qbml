@@ -1,5 +1,5 @@
--- QBML Test Tables Setup for H2 Database (used in CI)
--- H2 is compatible with most MySQL syntax
+-- QBML Test Tables Setup for MySQL
+-- Used in GitHub Actions CI with MySQL 8.0 service container
 
 -- Drop existing tables (in correct order for foreign keys)
 DROP TABLE IF EXISTS qbml_order_items;
@@ -18,9 +18,9 @@ CREATE TABLE qbml_departments (
     name VARCHAR(100) NOT NULL,
     parent_id INT NULL,
     budget DECIMAL(12,2) DEFAULT 0,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (parent_id) REFERENCES qbml_departments(id)
-);
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 -- ============================================
 -- USERS (main entity)
@@ -34,12 +34,15 @@ CREATE TABLE qbml_users (
     department_id INT NULL,
     salary DECIMAL(10,2) NULL,
     hire_date DATE NULL,
-    last_login TIMESTAMP NULL,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    deleted_at TIMESTAMP NULL,
-    FOREIGN KEY (department_id) REFERENCES qbml_departments(id)
-);
+    last_login DATETIME NULL,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    deleted_at DATETIME NULL,
+    FOREIGN KEY (department_id) REFERENCES qbml_departments(id),
+    INDEX idx_users_status (status),
+    INDEX idx_users_role (role),
+    INDEX idx_users_department (department_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 -- ============================================
 -- USER PROFILES (1:1 relationship)
@@ -54,7 +57,7 @@ CREATE TABLE qbml_user_profiles (
     phone VARCHAR(20) NULL,
     birth_date DATE NULL,
     FOREIGN KEY (user_id) REFERENCES qbml_users(id)
-);
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 -- ============================================
 -- CATEGORIES (for products, hierarchical)
@@ -65,9 +68,9 @@ CREATE TABLE qbml_categories (
     slug VARCHAR(100) NOT NULL UNIQUE,
     parent_id INT NULL,
     sort_order INT DEFAULT 0,
-    is_active BOOLEAN DEFAULT TRUE,
+    is_active TINYINT(1) DEFAULT 1,
     FOREIGN KEY (parent_id) REFERENCES qbml_categories(id)
-);
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 -- ============================================
 -- PRODUCTS
@@ -81,10 +84,11 @@ CREATE TABLE qbml_products (
     price DECIMAL(10,2) NOT NULL,
     cost DECIMAL(10,2) NULL,
     stock_qty INT DEFAULT 0,
-    is_active BOOLEAN DEFAULT TRUE,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY (category_id) REFERENCES qbml_categories(id)
-);
+    is_active TINYINT(1) DEFAULT 1,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (category_id) REFERENCES qbml_categories(id),
+    INDEX idx_products_category (category_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 -- ============================================
 -- ORDERS
@@ -98,11 +102,14 @@ CREATE TABLE qbml_orders (
     tax DECIMAL(12,2) DEFAULT 0,
     total DECIMAL(12,2) DEFAULT 0,
     notes TEXT NULL,
-    order_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    shipped_date TIMESTAMP NULL,
-    delivered_date TIMESTAMP NULL,
-    FOREIGN KEY (user_id) REFERENCES qbml_users(id)
-);
+    order_date DATETIME DEFAULT CURRENT_TIMESTAMP,
+    shipped_date DATETIME NULL,
+    delivered_date DATETIME NULL,
+    FOREIGN KEY (user_id) REFERENCES qbml_users(id),
+    INDEX idx_orders_user (user_id),
+    INDEX idx_orders_status (status),
+    INDEX idx_orders_date (order_date)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 -- ============================================
 -- ORDER ITEMS (many-to-many orders<->products)
@@ -116,21 +123,10 @@ CREATE TABLE qbml_order_items (
     discount DECIMAL(10,2) DEFAULT 0,
     line_total DECIMAL(12,2) NOT NULL,
     FOREIGN KEY (order_id) REFERENCES qbml_orders(id),
-    FOREIGN KEY (product_id) REFERENCES qbml_products(id)
-);
-
--- ============================================
--- INDEXES
--- ============================================
-CREATE INDEX idx_users_status ON qbml_users(status);
-CREATE INDEX idx_users_role ON qbml_users(role);
-CREATE INDEX idx_users_department ON qbml_users(department_id);
-CREATE INDEX idx_orders_user ON qbml_orders(user_id);
-CREATE INDEX idx_orders_status ON qbml_orders(status);
-CREATE INDEX idx_orders_date ON qbml_orders(order_date);
-CREATE INDEX idx_order_items_order ON qbml_order_items(order_id);
-CREATE INDEX idx_order_items_product ON qbml_order_items(product_id);
-CREATE INDEX idx_products_category ON qbml_products(category_id);
+    FOREIGN KEY (product_id) REFERENCES qbml_products(id),
+    INDEX idx_order_items_order (order_id),
+    INDEX idx_order_items_product (product_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 -- ============================================
 -- SEED DATA: Departments
@@ -181,35 +177,35 @@ INSERT INTO qbml_user_profiles (id, user_id, first_name, last_name, bio, phone, 
 -- SEED DATA: Categories
 -- ============================================
 INSERT INTO qbml_categories (id, name, slug, parent_id, sort_order, is_active) VALUES
-    (1, 'Electronics', 'electronics', NULL, 1, TRUE),
-    (2, 'Clothing', 'clothing', NULL, 2, TRUE),
-    (3, 'Books', 'books', NULL, 3, TRUE),
-    (4, 'Computers', 'computers', 1, 1, TRUE),
-    (5, 'Phones', 'phones', 1, 2, TRUE),
-    (6, 'Audio', 'audio', 1, 3, TRUE),
-    (7, 'Men', 'men', 2, 1, TRUE),
-    (8, 'Women', 'women', 2, 2, TRUE),
-    (9, 'Fiction', 'fiction', 3, 1, TRUE),
-    (10, 'Non-Fiction', 'non-fiction', 3, 2, TRUE),
-    (11, 'Discontinued', 'discontinued', NULL, 99, FALSE);
+    (1, 'Electronics', 'electronics', NULL, 1, 1),
+    (2, 'Clothing', 'clothing', NULL, 2, 1),
+    (3, 'Books', 'books', NULL, 3, 1),
+    (4, 'Computers', 'computers', 1, 1, 1),
+    (5, 'Phones', 'phones', 1, 2, 1),
+    (6, 'Audio', 'audio', 1, 3, 1),
+    (7, 'Men', 'men', 2, 1, 1),
+    (8, 'Women', 'women', 2, 2, 1),
+    (9, 'Fiction', 'fiction', 3, 1, 1),
+    (10, 'Non-Fiction', 'non-fiction', 3, 2, 1),
+    (11, 'Discontinued', 'discontinued', NULL, 99, 0);
 
 -- ============================================
 -- SEED DATA: Products
 -- ============================================
 INSERT INTO qbml_products (id, sku, name, category_id, price, cost, stock_qty, is_active) VALUES
-    (1, 'LAPTOP-001', 'ProBook Laptop 15"', 4, 1299.99, 800.00, 50, TRUE),
-    (2, 'LAPTOP-002', 'UltraBook Air 13"', 4, 999.99, 600.00, 30, TRUE),
-    (3, 'PHONE-001', 'SmartPhone Pro', 5, 899.99, 500.00, 100, TRUE),
-    (4, 'PHONE-002', 'SmartPhone Lite', 5, 499.99, 280.00, 150, TRUE),
-    (5, 'AUDIO-001', 'Wireless Headphones', 6, 199.99, 80.00, 200, TRUE),
-    (6, 'AUDIO-002', 'Bluetooth Speaker', 6, 79.99, 35.00, 300, TRUE),
-    (7, 'SHIRT-001', 'Classic T-Shirt', 7, 29.99, 10.00, 500, TRUE),
-    (8, 'SHIRT-002', 'Polo Shirt', 7, 49.99, 18.00, 250, TRUE),
-    (9, 'DRESS-001', 'Summer Dress', 8, 89.99, 35.00, 100, TRUE),
-    (10, 'BOOK-001', 'The Great Novel', 9, 24.99, 8.00, 75, TRUE),
-    (11, 'BOOK-002', 'Mystery Thriller', 9, 19.99, 6.00, 120, TRUE),
-    (12, 'BOOK-003', 'Business Strategy', 10, 34.99, 12.00, 60, TRUE),
-    (13, 'OLD-001', 'Discontinued Item', 11, 9.99, 5.00, 5, FALSE);
+    (1, 'LAPTOP-001', 'ProBook Laptop 15"', 4, 1299.99, 800.00, 50, 1),
+    (2, 'LAPTOP-002', 'UltraBook Air 13"', 4, 999.99, 600.00, 30, 1),
+    (3, 'PHONE-001', 'SmartPhone Pro', 5, 899.99, 500.00, 100, 1),
+    (4, 'PHONE-002', 'SmartPhone Lite', 5, 499.99, 280.00, 150, 1),
+    (5, 'AUDIO-001', 'Wireless Headphones', 6, 199.99, 80.00, 200, 1),
+    (6, 'AUDIO-002', 'Bluetooth Speaker', 6, 79.99, 35.00, 300, 1),
+    (7, 'SHIRT-001', 'Classic T-Shirt', 7, 29.99, 10.00, 500, 1),
+    (8, 'SHIRT-002', 'Polo Shirt', 7, 49.99, 18.00, 250, 1),
+    (9, 'DRESS-001', 'Summer Dress', 8, 89.99, 35.00, 100, 1),
+    (10, 'BOOK-001', 'The Great Novel', 9, 24.99, 8.00, 75, 1),
+    (11, 'BOOK-002', 'Mystery Thriller', 9, 19.99, 6.00, 120, 1),
+    (12, 'BOOK-003', 'Business Strategy', 10, 34.99, 12.00, 60, 1),
+    (13, 'OLD-001', 'Discontinued Item', 11, 9.99, 5.00, 5, 0);
 
 -- ============================================
 -- SEED DATA: Orders

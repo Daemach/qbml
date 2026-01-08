@@ -27,7 +27,7 @@ component extends="testbox.system.BaseSpec" {
 		// Create QB dependencies for standalone testing
 		var utils = new qb.models.Query.QueryUtils();
 
-		// Use MySQL grammar for H2 in CI, SqlServer for local development
+		// Use MySQL grammar in CI, SqlServer for local development
 		var grammar = isCI()
 			? new qb.models.Grammars.MySQLGrammar( utils )
 			: new qb.models.Grammars.SqlServerGrammar( utils );
