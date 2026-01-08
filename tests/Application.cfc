@@ -5,6 +5,9 @@ component {
 	// ============================================
 	// DATASOURCE CONFIGURATION
 	// ============================================
+	// Initialize datasources struct
+	this.datasources = {};
+
 	// Detect CI environment and BoxLang runtime safely
 	variables.isBoxLang = structKeyExists( server, "boxlang" );
 	variables.isCI      = false;
@@ -24,12 +27,12 @@ component {
 		// Database is pre-populated via mysql CLI in GitHub Actions workflow
 		// Hard-coded values match the CI workflow configuration
 		this.datasources[ "qbmlTests" ] = {
-			driver   : "mysql",
-			host     : "127.0.0.1",
-			port     : "3306",
-			database : "qbml_test",
-			username : "qbml",
-			password : "qbml_password"
+			class            : "com.mysql.cj.jdbc.Driver",
+			bundleName       : "com.mysql.cj",
+			bundleVersion    : "8.0.33",
+			connectionString : "jdbc:mysql://127.0.0.1:3306/qbml_test?useUnicode=true&characterEncoding=UTF-8&useLegacyDatetimeCode=true",
+			username         : "qbml",
+			password         : "qbml_password"
 		};
 	}
 	// For local development, configure your datasource in Lucee admin or uncomment below:
