@@ -8,6 +8,15 @@ component extends="testbox.system.BaseSpec" {
 		return len( server.system.environment.CI ?: "" ) || len( server.system.environment.GITHUB_ACTIONS ?: "" );
 	}
 
+	function isBoxLang() {
+		return structKeyExists( server, "boxlang" );
+	}
+
+	function usesMySQLGrammar() {
+		// Use MySQL grammar in CI (MySQL service container) or BoxLang
+		return isCI() || isBoxLang();
+	}
+
 	function getQBML() {
 		// Test settings with all qbml_* tables allowed
 		var testSettings = {
@@ -27,8 +36,8 @@ component extends="testbox.system.BaseSpec" {
 		// Create QB dependencies for standalone testing
 		var utils = new qb.models.Query.QueryUtils();
 
-		// Use MySQL grammar in CI, SqlServer for local development
-		var grammar = isCI()
+		// Use MySQL grammar in CI or BoxLang, SqlServer for local Lucee development
+		var grammar = usesMySQLGrammar()
 			? new qb.models.Grammars.MySQLGrammar( utils )
 			: new qb.models.Grammars.SqlServerGrammar( utils );
 

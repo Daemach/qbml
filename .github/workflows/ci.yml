@@ -105,6 +105,105 @@ jobs:
         if: always()
         run: box server stop
 
+  test-boxlang:
+    name: Tests - BoxLang
+    runs-on: ubuntu-latest
+    continue-on-error: true
+
+    services:
+      mysql:
+        image: mysql:8.0
+        env:
+          MYSQL_ROOT_PASSWORD: root
+          MYSQL_DATABASE: qbml_test
+          MYSQL_USER: qbml
+          MYSQL_PASSWORD: qbml_password
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=5
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: "temurin"
+          java-version: "21"
+
+      - name: Setup CommandBox
+        uses: Ortus-Solutions/setup-commandbox@v2.0.1
+        with:
+          version: "6.0.0"
+          forgeboxAPIKey: ${{ secrets.FORGEBOX_API_KEY }}
+
+      - name: Install Dependencies
+        run: box install
+
+      - name: Install BoxLang Modules
+        run: |
+          echo "Installing BoxLang compatibility and MySQL modules..."
+          box install bx-compat-cfml,bx-mysql --saveDev
+
+      - name: Initialize Test Database
+        run: |
+          echo "Setting up MySQL test database..."
+          mysql -h 127.0.0.1 -u qbml -pqbml_password qbml_test < tests/sql/setup-mysql.sql
+
+      - name: Start BoxLang Server
+        run: |
+          box server start cfengine=boxlang --debug
+          box server log
+          curl -sSf http://127.0.0.1:8080/ || echo "Server warmup..."
+          sleep 10
+        env:
+          DB_HOST: 127.0.0.1
+          DB_PORT: 3306
+          DB_DATABASE: qbml_test
+          DB_USER: qbml
+          DB_PASSWORD: qbml_password
+
+      - name: Run Tests
+        run: |
+          box testbox run runner="http://127.0.0.1:8080/tests/runner.cfm" outputFormats="json,text" verbose=true
+        env:
+          DB_HOST: 127.0.0.1
+          DB_PORT: 3306
+          DB_DATABASE: qbml_test
+          DB_USER: qbml
+          DB_PASSWORD: qbml_password
+
+      - name: Upload Test Results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results-boxlang
+          path: |
+            tests/results/**
+            .commandbox/server/**/logs/**
+          retention-days: 5
+
+      - name: Server Logs on Failure
+        if: failure()
+        run: |
+          echo "=== Server Status ==="
+          box server status
+          echo ""
+          echo "=== Server Log ==="
+          box server log
+          echo ""
+          echo "=== Console Log ==="
+          cat .commandbox/server/*/logs/console.log 2>/dev/null || echo "No console log found"
+
+      - name: Stop Server
+        if: always()
+        run: box server stop
+
   publish:
     name: Publish to ForgeBox
     runs-on: ubuntu-latest

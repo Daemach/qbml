@@ -11,11 +11,16 @@ component {
 	if ( variables.isCI ) {
 		// CI Environment: Use MySQL service container
 		// Database is pre-populated via mysql CLI in GitHub Actions workflow
+		// Use driver-based config for BoxLang compatibility, with class fallback for Lucee
 		this.datasources[ "qbmlTests" ] = {
-			class            : "com.mysql.cj.jdbc.Driver",
-			connectionString : "jdbc:mysql://#( server.system.environment.DB_HOST ?: '127.0.0.1' )#:#( server.system.environment.DB_PORT ?: '3306' )#/#( server.system.environment.DB_DATABASE ?: 'qbml_test' )#?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC",
-			username         : server.system.environment.DB_USER ?: "qbml",
-			password         : server.system.environment.DB_PASSWORD ?: "qbml_password"
+			driver   : "mysql",
+			class    : "com.mysql.cj.jdbc.Driver",
+			host     : server.system.environment.DB_HOST ?: "127.0.0.1",
+			port     : server.system.environment.DB_PORT ?: "3306",
+			database : server.system.environment.DB_DATABASE ?: "qbml_test",
+			username : server.system.environment.DB_USER ?: "qbml",
+			password : server.system.environment.DB_PASSWORD ?: "qbml_password",
+			custom   : { useSSL : false, allowPublicKeyRetrieval : true, serverTimezone : "UTC" }
 		};
 	}
 	// For local development, configure your datasource in Lucee admin or uncomment below:
