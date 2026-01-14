@@ -1,0 +1,24 @@
+# Development files
+.mcp.json
+.claude
+CLAUDE.md
+.vscode/
+.git/
+.gitignore
+
+# Node/Quasar editor (not needed for CFML module)
+qbml-editor-quasar/
+
+# Schemas (optional, used for editor)
+schemas/
+
+# Dependencies (installed via box install)
+modules/
+
+# Tests (optional - include if you want users to run tests)
+# tests/
+
+# Misc
+nul
+*.md
+!README.md
