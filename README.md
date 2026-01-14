@@ -450,6 +450,44 @@ Use `{ "$param": "paramName" }` to reference a parameter value anywhere in your 
 { "whereBetween": ["orderDate", { "$param": "startDate" }, { "$param": "endDate" }] }
 ```
 
+### String Template Interpolation
+
+For LIKE patterns and other string interpolation needs, use the `$paramName$` syntax to embed parameter values directly in strings:
+
+```json
+{ "whereLike": ["name", "%$filter$%"] }
+{ "whereLike": ["email", "$domain$%"] }
+{ "whereLike": ["filename", "%$extension$"] }
+{ "where": ["code", "like", "PREFIX-$code$-SUFFIX"] }
+```
+
+Execute with parameters:
+
+```cfml
+// Search for users with "john" in their name
+var results = qbml.execute( query, { params: { filter: "john" } } );
+// Generates: WHERE name LIKE '%john%'
+
+// Find emails starting with a domain
+var results = qbml.execute( query, { params: { domain: "example.com" } } );
+// Generates: WHERE email LIKE 'example.com%'
+```
+
+This is especially useful for search functionality where you want the query definition to specify the LIKE pattern structure while the actual search term comes from user input.
+
+Multiple params can be interpolated in a single string:
+
+```json
+{ "where": ["sku", "like", "$category$-$year$-%"] }
+```
+
+```cfml
+qbml.execute( query, { params: { category: "ELEC", year: "2024" } } );
+// Generates: WHERE sku LIKE 'ELEC-2024-%'
+```
+
+**Note:** Only simple values (strings, numbers) are interpolated. Arrays and structs are left unchanged. Missing params leave the `$paramName$` placeholder in place.
+
 ### Param-Based Conditions
 
 The real power comes from combining `$param` with `when` conditions. This lets you skip clauses entirely when parameters are empty:

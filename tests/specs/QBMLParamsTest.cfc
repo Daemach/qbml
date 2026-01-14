@@ -130,6 +130,105 @@ component extends="testbox.system.BaseSpec" {
 				} );
 			} );
 
+			describe( "String template interpolation ($paramName$)", function() {
+				it( "interpolates single param in string", function() {
+					var result = qbml.resolveParamRefs( "%$filter$%", { filter : "john" } );
+					expect( result ).toBe( "%john%" );
+				} );
+
+				it( "interpolates param at start of string", function() {
+					var result = qbml.resolveParamRefs( "$domain$%", { domain : "example.com" } );
+					expect( result ).toBe( "example.com%" );
+				} );
+
+				it( "interpolates param at end of string", function() {
+					var result = qbml.resolveParamRefs( "%$extension$", { extension : ".pdf" } );
+					expect( result ).toBe( "%.pdf" );
+				} );
+
+				it( "interpolates multiple params in string", function() {
+					var result = qbml.resolveParamRefs(
+						"$prefix$-$code$-$suffix$",
+						{ prefix : "PRE", code : "123", suffix : "SUF" }
+					);
+					expect( result ).toBe( "PRE-123-SUF" );
+				} );
+
+				it( "leaves unmatched params unchanged", function() {
+					var result = qbml.resolveParamRefs( "%$filter$%", {} );
+					expect( result ).toBe( "%$filter$%" );
+				} );
+
+				it( "handles mixed matched and unmatched params", function() {
+					var result = qbml.resolveParamRefs(
+						"$found$-$missing$",
+						{ found : "HERE" }
+					);
+					expect( result ).toBe( "HERE-$missing$" );
+				} );
+
+				it( "only interpolates simple values", function() {
+					// Arrays should not be interpolated into strings
+					var result = qbml.resolveParamRefs( "%$filter$%", { filter : [ 1, 2, 3 ] } );
+					expect( result ).toBe( "%$filter$%" );
+				} );
+
+				it( "works with whereLike in query", function() {
+					var query = [
+						{ from : "users" },
+						{ select : [ "id", "name" ] },
+						{ whereLike : [ "name", "%$filter$%" ] }
+					];
+					var sql = qbml.toSQL( query, { filter : "john" } );
+					expect( sql ).toInclude( "LIKE" );
+				} );
+
+				it( "works with whereNotLike in query", function() {
+					var query = [
+						{ from : "users" },
+						{ select : [ "id", "email" ] },
+						{ whereNotLike : [ "email", "%$domain$" ] }
+					];
+					var sql = qbml.toSQL( query, { domain : "@spam.com" } );
+					expect( sql ).toInclude( "NOT LIKE" );
+				} );
+
+				it( "works in where clause for pattern matching", function() {
+					var query = [
+						{ from : "products" },
+						{ select : "*" },
+						{ where : [ "sku", "like", "$prefix$%" ] }
+					];
+					var sql = qbml.toSQL( query, { prefix : "PROD" } );
+					expect( sql ).toInclude( "LIKE" );
+				} );
+
+				it( "interpolates within arrays", function() {
+					var result = qbml.resolveParamRefs(
+						[ "column", "%$search$%" ],
+						{ search : "test" }
+					);
+					expect( result[ 1 ] ).toBe( "column" );
+					expect( result[ 2 ] ).toBe( "%test%" );
+				} );
+
+				it( "supports underscores in param names", function() {
+					var result = qbml.resolveParamRefs(
+						"%$search_term$%",
+						{ search_term : "hello" }
+					);
+					expect( result ).toBe( "%hello%" );
+				} );
+
+				it( "supports numbers in param names (not at start)", function() {
+					var result = qbml.resolveParamRefs(
+						"$param1$-$param2$",
+						{ param1 : "one", param2 : "two" }
+					);
+					expect( result ).toBe( "one-two" );
+				} );
+			} );
+
 			describe( "Param-based when conditions", function() {
 				it( "skips whereIn when param is empty array", function() {
 					var query = [

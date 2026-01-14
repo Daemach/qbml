@@ -1375,6 +1375,7 @@ component accessors="true" singleton {
 	 *
 	 * Supports:
 	 *   { "$param": "paramName" } - replaced with params.paramName value
+	 *   "$paramName$" in strings - inline template interpolation (e.g., "%$filter$%" for LIKE patterns)
 	 *   Arrays containing $param refs - each element resolved
 	 *   Structs containing $param refs - each value resolved (except $param key itself)
 	 *
@@ -1410,6 +1411,29 @@ component accessors="true" singleton {
 				resolved[ key ] = resolveParamRefs( arguments.value[ key ], arguments.params );
 			}
 			return resolved;
+		}
+
+		// String template interpolation: "$paramName$" pattern
+		// Allows inline param substitution like "%$filter$%" for LIKE patterns
+		if ( isSimpleValue( arguments.value ) && arguments.value contains "$" ) {
+			var result  = arguments.value;
+			var pattern = "\$([a-zA-Z_][a-zA-Z0-9_]*)\$";
+			var matcher = createObject( "java", "java.util.regex.Pattern" )
+				.compile( pattern )
+				.matcher( result );
+
+			while ( matcher.find() ) {
+				var fullMatch = matcher.group( 0 );
+				var paramName = matcher.group( 1 );
+				if ( arguments.params.keyExists( paramName ) ) {
+					var paramValue = arguments.params[ paramName ];
+					// Only interpolate simple values into strings
+					if ( isSimpleValue( paramValue ) ) {
+						result = replace( result, fullMatch, paramValue, "all" );
+					}
+				}
+			}
+			return result;
 		}
 
 		// Simple value - return as-is

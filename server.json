@@ -1,12 +1,12 @@
 {
-    "name": "qbml",
-    "app": {
-        "cfengine": "lucee@5.4"
+    "name":"qbml",
+    "app":{
+        "cfengine":"lucee@5.4"
     },
-    "web": {
-        "http": {
-            "port": 8080
+    "web":{
+        "http":{
+            "port":8080
         }
     },
-    "openBrowser": false
+    "openBrowser":false
 }
