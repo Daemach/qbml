@@ -1,7 +1,7 @@
 {
     "name":"qbml",
     "slug":"qbml",
-    "version":"1.1.1",
+    "version":"1.1.3",
     "author":"John Wilson",
     "location":"forgeboxStorage",
     "homepage":"https://github.com/Daemach/qbml",
@@ -45,5 +45,21 @@
     "installPaths":{
         "qb":"modules/qb/",
         "testbox":"modules/testbox/"
-    }
+    },
+    "ignore":[
+        "**/.*",
+        ".mcp.json",
+        "CLAUDE.md",
+        ".vscode/**",
+        ".git/**",
+        ".gitignore",
+        "qbml-editor-quasar/**",
+        "schemas/**",
+        "modules/**",
+        "tests/**",
+        "nul",
+        "*.md",
+        "!README.md",
+        "node_modules/**"
+    ]
 }
