@@ -1,7 +1,7 @@
 {
     "name":"qbml",
     "slug":"qbml",
-    "version":"1.0.2",
+    "version":"1.1.0",
     "author":"John Wilson",
     "location":"forgeboxStorage",
     "homepage":"https://github.com/Daemach/qbml",
@@ -40,7 +40,7 @@
         "lucee":">=5.3"
     },
     "testbox":{
-        "runner":"http://localhost:64758/tests/runner.cfm"
+        "runner":"http://localhost:8080/tests/runner.cfm"
     },
     "installPaths":{
         "qb":"modules/qb/",
