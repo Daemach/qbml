@@ -5,3 +5,4 @@ CLAUDE.md
 nul
 modules/*
 !modules/.gitkeep
+QBML_VISUAL_QUERY_BUILDER_PLAN.md
