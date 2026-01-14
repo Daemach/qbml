@@ -234,7 +234,7 @@ jobs:
           forgeboxAPIKey: ${{ secrets.FORGEBOX_API_KEY }}
 
       - name: Publish to ForgeBox
-        run: box publish
+        run: box publish --force
 
       - name: Create GitHub Release
         if: success()

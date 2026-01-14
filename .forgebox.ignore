@@ -5,9 +5,7 @@ CLAUDE.md
 .vscode/
 .git/
 .gitignore
-
-# Node/Quasar editor (not needed for CFML module)
-qbml-editor-quasar/
+.gitkeep
 
 # Schemas (optional, used for editor)
 schemas/
@@ -22,3 +20,4 @@ modules/
 nul
 *.md
 !README.md
+node_modules/
