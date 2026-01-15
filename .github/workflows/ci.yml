@@ -239,6 +239,7 @@ jobs:
         run: |
           echo "Publishing version $(box package version) using `publish`..."
           box config set verboseErrors=true
+          rm -rf .commandbox
           box publish
           echo "Publish complete"
 
