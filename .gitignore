@@ -8,3 +8,4 @@ modules/*
 QBML_VISUAL_QUERY_BUILDER_PLAN.md
 qbml-editor-quasar/
 schemas/
+.commandbox
