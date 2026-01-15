@@ -236,10 +236,13 @@ jobs:
           forgeboxAPIKey: ${{ secrets.FORGEBOX_API_KEY }}
 
       - name: Publish to ForgeBox
+        env:
+          COMMANDBOX_HOME: /tmp/.commandbox
         run: |
-          echo "Publishing version $(box package version) using `publish`..."
-          box config set verboseErrors=true
+          echo "Publishing version $(box package version)..."
           rm -rf .commandbox
+          box config set verboseErrors=true
+          box config set endpoints.forgebox.APIToken=${{ secrets.FORGEBOX_API_KEY }}
           box publish
           echo "Publish complete"
 
