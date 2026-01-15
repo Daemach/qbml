@@ -237,7 +237,7 @@ jobs:
 
       - name: Publish to ForgeBox
         run: |
-          echo "Publishing version $(box package version)..."
+          echo "Publishing version $(box package version) using `publish`..."
           box config set verboseErrors=true
           box publish
           echo "Publish complete"
