@@ -44,7 +44,7 @@
     },
     "installPaths":{
         "qb":"modules/qb/",
-        "testbox":"modules/testbox/"
+        "testbox":"testbox/"
     },
     "ignore":[
         "**/.*",
