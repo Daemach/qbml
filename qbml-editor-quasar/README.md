@@ -1,9 +1,28 @@
-# MonacoJsonEditor
+# QBML Editor
 
 A feature-rich JSON editor component for Vue 3 + Quasar, powered by Monaco Editor.
 Schema validation, autocomplete, snippets, and rich hover tooltips.
 
-## Setup
+## Quick Start (Demo)
+
+Run the included demo app to try the QBML editor locally:
+
+```bash
+cd qbml-editor-quasar
+npm install
+npx quasar dev
+```
+
+Requires Node.js 20+. Opens at `http://localhost:9000`.
+
+To build for production:
+
+```bash
+npx quasar build
+# Output: dist/spa/
+```
+
+## Using the Component in Your App
 
 ### 1. Install dependencies
 

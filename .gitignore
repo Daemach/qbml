@@ -6,8 +6,6 @@ nul
 modules/*
 !modules/.gitkeep
 QBML_VISUAL_QUERY_BUILDER_PLAN.md
-qbml-editor-quasar/
-schemas/
 tests/.env
 .commandbox
 testbox/

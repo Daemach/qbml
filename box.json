@@ -53,13 +53,16 @@
         ".vscode/**",
         ".git/**",
         ".gitignore",
-        "qbml-editor-quasar/**",
-        "schemas/**",
         "modules/**",
+        "testbox/**",
         "tests/**",
         "nul",
         "*.md",
-        "!README.md",
-        "node_modules/**"
+        "!/README.md",
+        "!qbml-editor-quasar/README.md",
+        "!schemas/README.md",
+        "node_modules/**",
+        "qbml-editor-quasar/node_modules/**",
+        "qbml-editor-quasar/.quasar/**"
     ]
 }
