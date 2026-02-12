@@ -38,7 +38,7 @@ component extends="testbox.system.BaseSpec" {
 		variables.qbml.setQb( qbProvider );
 		variables.qbml.setSecurity( new qbml.models.QBMLSecurity( settings = testSettings ) );
 		variables.qbml.setConditions( new qbml.models.QBMLConditions() );
-		variables.qbml.setTabular( new qbml.models.Tabular() );
+		variables.qbml.setFormatter( new qbml.models.ReturnFormat() );
 	}
 
 	function run() {

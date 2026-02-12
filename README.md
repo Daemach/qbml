@@ -101,7 +101,7 @@ component {
                 timeout      : 30,
                 maxRows      : 10000,
                 datasource   : "",
-                returnFormat : "array"  // "array" or "tabular"
+                returnFormat : "array"  // "array", "tabular", "query", or ["struct", "columnKey"]
             },
 
             // Read-only credentials (optional)
@@ -156,7 +156,7 @@ moduleSettings = {
         actions   : { mode : "none", list : [] },
         executors : { mode : "none", list : [] },
         aliases   : {},
-        defaults  : { timeout : 30, maxRows : 10000, datasource : "", returnFormat : "array" },
+        defaults  : { timeout : 30, maxRows : 10000, datasource : "", returnFormat : "array" }, // "array", "tabular", "query", or ["struct", "columnKey"]
         credentials : { username : "", password : "" },
         debug     : false
     }
@@ -645,37 +645,114 @@ Pass execution options with the executor:
 }
 ```
 
-### Tabular Return Format
+### Return Formats
 
-For `get` and `paginate`, you can request tabular format - a compact structure with column metadata.
+For `get`, `paginate`, and `simplePaginate`, you can control the result format:
+
+- **`"array"`** (default) — Array of structs: `[{ id: 1, name: "Alice" }, ...]`
+- **`"tabular"`** — Compact `{ columns, rows }` with type metadata
+- **`"query"`** — Native CFML query object
+- **`["struct", columnKey]`** — Struct keyed by a column value (lookup maps, master-detail)
+- **`["struct", columnKey, valueKeys]`** — Struct of partial rows or scalar values
+
+> All formats accept tuple syntax: `["array"]` is equivalent to `"array"`.
+> Struct **requires** tuple syntax since it needs a columnKey parameter.
+
+**Priority Order:** Execute options > Query definition > Config defaults
 
 **Setting the Default Format:**
 
-Configure globally in your `config/qbml.cfc`:
-
 ```cfml
 defaults : {
-    returnFormat : "tabular"  // All queries return tabular by default
+    returnFormat : "tabular"           // All queries return tabular by default
+    // returnFormat : ["struct", "id"] // All queries return struct keyed by id
 }
 ```
-
-**Priority Order:** Execute options > Query definition > Config defaults
 
 **Per-Query Override:**
 
 ```json
 { "get": { "returnFormat": "tabular" } }
-{ "paginate": { "page": 1, "maxRows": 25, "returnFormat": "tabular" } }
+{ "get": { "returnFormat": "query" } }
+{ "get": { "returnFormat": ["struct", "id"] } }
+{ "get": { "returnFormat": ["struct", "code", ["label"]] } }
+{ "paginate": { "page": 1, "maxRows": 25, "returnFormat": ["struct", "orderId"] } }
 ```
 
 **Runtime Override:**
 
 ```cfml
-// Override config default at execution time
-qbml.execute( query, { returnFormat : "array" } );
+qbml.execute( query, { returnFormat : "query" } );
+qbml.execute( query, { returnFormat : [ "struct", "id" ] } );
 ```
 
-Tabular format returns:
+#### Struct Format
+
+Returns results as a struct keyed by a column value — ideal for translation maps,
+lookup tables, and master-detail relationships where you need fast key-based access.
+
+**Full rows keyed by id:**
+
+```json
+{ "get": { "returnFormat": ["struct", "id"] } }
+```
+
+```json
+{
+  "1": { "id": 1, "username": "alice", "email": "alice@example.com" },
+  "2": { "id": 2, "username": "bob", "email": "bob@example.com" }
+}
+```
+
+**Translation map** — single valueKey returns scalar values:
+
+```json
+{ "get": { "returnFormat": ["struct", "code", ["label"]] } }
+```
+
+```json
+{ "US": "United States", "CA": "Canada", "MX": "Mexico" }
+```
+
+**Partial rows** — multiple valueKeys return a subset of columns:
+
+```json
+{ "get": { "returnFormat": ["struct", "id", ["username", "email"]] } }
+```
+
+```json
+{
+  "1": { "username": "alice", "email": "alice@example.com" },
+  "2": { "username": "bob", "email": "bob@example.com" }
+}
+```
+
+**Pagination** — `results` is a struct, pagination metadata is unchanged:
+
+```json
+{ "paginate": { "page": 1, "maxRows": 25, "returnFormat": ["struct", "orderId"] } }
+```
+
+```json
+{
+  "pagination": { "page": 1, "maxRows": 25, "totalRecords": 150, "totalPages": 6 },
+  "results": {
+    "1001": { "orderId": 1001, "total": 59.99, "status": "shipped" },
+    "1002": { "orderId": 1002, "total": 124.50, "status": "pending" }
+  }
+}
+```
+
+> **Duplicate keys:** If multiple rows share the same columnKey value, the last row wins.
+> Use a unique column (primary key, code, etc.) for predictable results.
+>
+> **Validation:** If `columnKey` or any value in `valueKeys` doesn't match a column in the
+> result set, a `QBML.InvalidColumnKey` or `QBML.InvalidValueKey` error is thrown with a
+> message listing the available columns.
+
+#### Tabular Format
+
+**Tabular format structure:**
 
 ```json
 {
@@ -708,7 +785,7 @@ For pagination with tabular format:
 }
 ```
 
-**Detected Types**: `integer`, `bigint`, `decimal`, `varchar`, `boolean`, `datetime`, `uuid`, `object`, `array`
+**Tabular Detected Types**: `integer`, `bigint`, `decimal`, `varchar`, `boolean`, `datetime`, `uuid`, `object`, `array`
 
 ## API Reference
 
@@ -746,19 +823,23 @@ var resolved = qbml.resolveParamRefs( value, params );
 
 ```cfml
 // Inject
-property name="tabular" inject="Tabular@qbml";
+property name="returnFormat" inject="ReturnFormat@qbml";
 
 // Convert array of structs to tabular format
-var result = tabular.fromArray( data );
+var result = returnFormat.fromArray( data );
 
-// Convert query object to tabular format
-var result = tabular.fromQuery( queryObject );
+// Convert query object to tabular format (accurate DB types)
+var result = returnFormat.fromQuery( queryObject );
 
-// Transform pagination result to tabular format
-var result = tabular.fromPagination( paginationResult, "results" );
+// Transform any results using a parsed format spec
+var rf     = returnFormat.parse( "tabular" );
+var result = returnFormat.transform( data, rf );
+
+// Transform pagination result
+var result = returnFormat.transformPaginated( paginationResult, rf, "results" );
 
 // Decompress tabular back to array of structs
-var data = tabular.toArray( tabularData );
+var data = returnFormat.toArray( tabularData );
 ```
 
 ### Browser-Side Detabulator (JavaScript/TypeScript)

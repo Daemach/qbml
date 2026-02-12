@@ -1,7 +1,7 @@
 component extends="testbox.system.BaseSpec" {
 
 	function beforeAll() {
-		variables.tabular = new qbml.models.Tabular();
+		variables.tabular = new qbml.models.ReturnFormat();
 	}
 
 	function run() {
@@ -116,7 +116,7 @@ component extends="testbox.system.BaseSpec" {
 				} );
 			} );
 
-			describe( "fromPagination", function() {
+			describe( "transformPaginated", function() {
 				it( "transforms pagination results to tabular format", function() {
 					var paginationResult = {
 						results : [
@@ -131,7 +131,8 @@ component extends="testbox.system.BaseSpec" {
 						}
 					};
 
-					var result = tabular.fromPagination( paginationResult, "results" );
+					var rf     = tabular.parse( "tabular" );
+					var result = tabular.transformPaginated( paginationResult, rf, "results" );
 
 					// Pagination should be preserved
 					expect( result ).toHaveKey( "pagination" );
@@ -152,7 +153,8 @@ component extends="testbox.system.BaseSpec" {
 						pagination : { page : 1 }
 					};
 
-					var result = tabular.fromPagination( paginationResult, "data" );
+					var rf     = tabular.parse( "tabular" );
+					var result = tabular.transformPaginated( paginationResult, rf, "data" );
 
 					// Main should be tabular
 					expect( result.data.main ).toHaveKey( "columns" );

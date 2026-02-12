@@ -1,5 +1,5 @@
 <template>
-  <div ref="rootContainer" class="monaco-json-editor" :style="containerStyle">
+  <div ref="rootContainer" class="monaco-json-editor" :class="{ dark: isDark }" :style="containerStyle">
     <!-- Title Bar -->
     <div v-if="props.title" class="monaco-title-bar">
       <span class="title-text">{{ props.title }}</span>
@@ -50,7 +50,7 @@
         flat
         dense
         icon="sort_by_alpha"
-        title="Sort keys alphabetically"
+        title="Sort keys (SQL clause order)"
         @click="sortKeys"
       />
       <q-separator vertical class="q-mx-xs" />
@@ -71,50 +71,41 @@
         @click="collapseAll"
       />
 
-      <!-- Snippets dropdown -->
+      <q-space />
+
+      <!-- Per-group snippet buttons (right-aligned) -->
       <template v-if="props.snippets && props.snippets.length > 0">
-        <q-separator vertical class="q-mx-xs" />
         <q-btn-dropdown
+          v-for="[ group, items ] in groupedSnippets"
+          :key="group"
           flat
           dense
-          label="Snippets"
+          no-icon-animation
+          :label="groupLabels[ group ] || group"
           dropdown-icon="expand_more"
+          anchor="bottom end"
+          self="top end"
         >
-          <q-list>
-            <q-item-label header>{{ props.schemaName || "Code" }} Snippets</q-item-label>
+          <q-list style="max-height: 400px; overflow-y: auto; min-width: 320px">
             <q-item
-              v-for="snippet in categorizedSnippets.templates"
+              v-for="snippet in items"
               :key="snippet.label"
               clickable
               v-close-popup
               @click="insertSnippet( snippet )"
             >
               <q-item-section>
-                <q-item-label>{{ snippet.detail || snippet.label }}</q-item-label>
+                <q-item-label>{{ snippet.label }}</q-item-label>
                 <q-item-label caption>{{ snippet.documentation }}</q-item-label>
+                <q-item-label
+                  :style="snippetPreviewStyle"
+                >{{ snippetPreview( snippet ) }}</q-item-label>
               </q-item-section>
             </q-item>
-            <template v-if="categorizedSnippets.clauses.length > 0">
-              <q-separator />
-              <q-item-label header>Individual Clauses</q-item-label>
-              <q-item
-                v-for="snippet in categorizedSnippets.clauses"
-                :key="snippet.label"
-                clickable
-                v-close-popup
-                @click="insertSnippet( snippet )"
-              >
-                <q-item-section>
-                  <q-item-label>{{ snippet.detail || snippet.label }}</q-item-label>
-                  <q-item-label caption>{{ snippet.documentation }}</q-item-label>
-                </q-item-section>
-              </q-item>
-            </template>
           </q-list>
         </q-btn-dropdown>
+        <q-separator vertical class="q-mx-xs" />
       </template>
-
-      <q-space />
 
       <!-- Schema indicator -->
       <q-badge v-if="props.schemaName" color="grey-7" class="q-mr-sm">
@@ -158,42 +149,6 @@
       :style="editorContainerStyle"
     ></div>
 
-    <!-- Custom Pinnable Hover Tooltip -->
-    <div
-      v-if="hoverTooltip.visible"
-      ref="hoverTooltipEl"
-      class="custom-hover-tooltip"
-      :class="{ 'is-pinned': hoverTooltip.pinned }"
-      :style="hoverTooltipStyle"
-      @mouseenter="onTooltipMouseEnter"
-      @mouseleave="onTooltipMouseLeave"
-    >
-      <div class="hover-tooltip-header">
-        <span class="hover-tooltip-title">{{ hoverTooltip.title }}</span>
-        <q-space />
-        <q-btn
-          flat
-          dense
-          round
-          size="sm"
-          :icon="hoverTooltip.pinned ? 'push_pin' : 'push_pin'"
-          :color="hoverTooltip.pinned ? 'primary' : 'grey'"
-          title="Pin tooltip"
-          @click="togglePinTooltip"
-        />
-        <q-btn
-          flat
-          dense
-          round
-          size="sm"
-          icon="close"
-          title="Close"
-          @click="hideHoverTooltip"
-        />
-      </div>
-      <div class="hover-tooltip-content" v-html="hoverTooltip.htmlContent"></div>
-    </div>
-
     <!-- Footer Status Bar -->
     <div v-if="props.showFooter" class="monaco-footer">
       <span class="cursor-info">
@@ -213,25 +168,29 @@
 
 <script setup>
 /**
- * MonacoJsonEditor - A feature-rich JSON editor component based on Monaco Editor
+ * MonacoJsonEditor - A reusable JSON editor with schema validation, snippets, and toolbar.
+ *
+ * v-model is STRING ONLY. The parent owns serialization.
+ * Uses executeEdits + pushUndoStop for all content mutations to preserve undo/cursor.
  */
-import { ref, watch, onMounted, onBeforeUnmount, computed, nextTick } from "vue";
+import { ref, shallowRef, watch, onMounted, onBeforeUnmount, computed, nextTick, markRaw } from "vue";
+import { useQuasar } from "quasar";
 import * as monaco from "monaco-editor";
+import stringify from "json-stringify-pretty-compact";
 
-// Global schema registry for Monaco
+// ---------------------------------------------------------------------------
+// Global schema registry shared across all MonacoJsonEditor instances
+// ---------------------------------------------------------------------------
 const globalSchemaRegistry = new Map();
 
-// Deep clone schema to ensure it's serializable
 const cloneSchema = ( schema ) => {
   try {
     return JSON.parse( JSON.stringify( schema ) );
-  } catch ( e ) {
-    console.warn( "[MonacoJsonEditor] Failed to clone schema:", e );
+  } catch {
     return null;
   }
 };
 
-// Update Monaco's global JSON diagnostics
 const updateGlobalSchemaConfig = () => {
   const schemas = Array.from( globalSchemaRegistry.values() )
     .map( entry => ( {
@@ -243,7 +202,7 @@ const updateGlobalSchemaConfig = () => {
 
   monaco.languages.json.jsonDefaults.setDiagnosticsOptions( {
     validate: true,
-    schemas: schemas,
+    schemas,
     allowComments: false,
     trailingCommas: "error",
     schemaValidation: "error",
@@ -254,7 +213,7 @@ const updateGlobalSchemaConfig = () => {
     documentFormattingEdits: true,
     documentRangeFormattingEdits: true,
     completionItems: true,
-    hovers: false,
+    hovers: true,
     documentSymbols: true,
     tokens: true,
     colors: true,
@@ -264,10 +223,13 @@ const updateGlobalSchemaConfig = () => {
   } );
 };
 
+// ---------------------------------------------------------------------------
+// Props & emits
+// ---------------------------------------------------------------------------
 const props = defineProps( {
   modelValue: {
-    type: [ String, Object, Array ],
-    default: "",
+    type: String,
+    default: "[\n\n]",
   },
   title: {
     type: String,
@@ -341,12 +303,22 @@ const props = defineProps( {
 
 const emit = defineEmits( [ "update:modelValue", "validation", "ready" ] );
 
+const $q = useQuasar();
+const isDark = computed( () => $q.dark.isActive );
+
+// ---------------------------------------------------------------------------
+// Refs
+// ---------------------------------------------------------------------------
 const editorContainer = ref( null );
 const rootContainer = ref( null );
-let editor = null;
-let model = null;
-let snippetDisposable = null;
+const editorRef = shallowRef( null );
+const modelRef = shallowRef( null );
 let resizeObserver = null;
+
+// Synchronous flag to prevent v-model feedback loop.
+// onDidChangeModelContent fires synchronously during executeEdits,
+// so this MUST use try/finally, NOT nextTick.
+let isApplyingExternalChange = false;
 
 // UI state
 const hasErrors = ref( false );
@@ -361,20 +333,9 @@ const cursorColumn = ref( 1 );
 const charCount = ref( 0 );
 const lineCount = ref( 1 );
 
-// Custom hover tooltip state
-const hoverTooltipEl = ref( null );
-const hoverTooltip = ref( {
-  visible: false,
-  pinned: false,
-  title: "",
-  htmlContent: "",
-  x: 0,
-  y: 0,
-} );
-let hoverTimeoutId = null;
-let hideTimeoutId = null;
-let isMouseOverTooltip = false;
-
+// ---------------------------------------------------------------------------
+// Layout calculations
+// ---------------------------------------------------------------------------
 const TITLE_HEIGHT = 40;
 const TOOLBAR_HEIGHT = 40;
 const FOOTER_HEIGHT = 28;
@@ -388,124 +349,75 @@ const containerStyle = computed( () => ( {
 } ) );
 
 const editorContainerStyle = computed( () => {
-  let height = "100%";
   const offsets = [];
   if ( props.title ) offsets.push( `${TITLE_HEIGHT}px` );
   if ( props.showToolbar ) offsets.push( `${TOOLBAR_HEIGHT}px` );
   if ( props.showFooter ) offsets.push( `${FOOTER_HEIGHT}px` );
   if ( showErrorPanel.value && hasErrors.value ) offsets.push( `${ERROR_PANEL_MAX_HEIGHT}px` );
-  if ( offsets.length > 0 ) {
-    height = `calc(100% - ${offsets.join( " - " )})`;
-  }
+  const height = offsets.length > 0
+    ? `calc(100% - ${offsets.join( " - " )})`
+    : "100%";
   return { height };
 } );
 
-// Categorize snippets
-const categorizedSnippets = computed( () => {
-  const templates = [];
-  const clauses = [];
-  if ( !props.snippets ) return { templates, clauses };
+// ---------------------------------------------------------------------------
+// Snippet categorization
+// ---------------------------------------------------------------------------
+const groupLabels = {
+  "Query Templates": "Templates",
+  "Inserts, Updates & Deletes": "DML",
+  "Wheres": "Where",
+  "Joins": "Join",
+  "Ordering, Grouping & Limit": "Order",
+  "Common Table Expressions": "CTE",
+  "Unions": "Union",
+  "When (Conditional)": "When",
+};
 
-  for ( const snippet of props.snippets ) {
-    const isTemplate = snippet.label.startsWith( "qbml-" ) ||
-      ( snippet.insertText && snippet.insertText.includes( "\\n" ) && snippet.insertText.length > 100 );
-    if ( isTemplate ) {
-      templates.push( snippet );
-    } else {
-      clauses.push( snippet );
-    }
+const groupedSnippets = computed( () => {
+  const groups = new Map();
+  for ( const snippet of props.snippets || [] ) {
+    const group = snippet.detail || "Other";
+    if ( !groups.has( group ) ) groups.set( group, [] );
+    groups.get( group ).push( snippet );
   }
-  return { templates, clauses };
+  return groups;
 } );
 
-const hoverTooltipStyle = computed( () => ( {
-  left: `${hoverTooltip.value.x}px`,
-  top: `${hoverTooltip.value.y}px`,
+/** Inline styles for snippet preview (portaled by Quasar, can't use scoped CSS) */
+const snippetPreviewStyle = computed( () => ( {
+  fontFamily: "'Cascadia Code', 'Fira Code', Consolas, monospace",
+  fontSize: "11px",
+  lineHeight: "1.3",
+  color: isDark.value ? "#9ca3af" : "#64748b",
+  background: isDark.value ? "#1a1a2e" : "#f1f5f9",
+  borderRadius: "4px",
+  padding: "6px 8px",
+  marginTop: "4px",
+  whiteSpace: "pre",
+  overflowX: "auto",
+  maxHeight: "120px",
 } ) );
 
-// Markdown to HTML converter
-const markdownToHtml = ( text ) => {
-  if ( !text ) return "";
-
-  const placeholders = [];
-  let html = text;
-
-  // Extract and protect code blocks
-  html = html.replace( /```(\w*)\n([\s\S]*?)```/g, ( match, lang, code ) => {
-    const escaped = code.trim()
-      .replace( /&/g, "&amp;" )
-      .replace( /</g, "&lt;" )
-      .replace( />/g, "&gt;" );
-    const placeholder = `__CODEBLOCK_${placeholders.length}__`;
-    placeholders.push( `<pre class="code-block"><code>${escaped}</code></pre>` );
-    return placeholder;
-  } );
-
-  // Extract and protect inline code
-  html = html.replace( /`([^`]+)`/g, ( match, code ) => {
-    const escaped = code
-      .replace( /&/g, "&amp;" )
-      .replace( /</g, "&lt;" )
-      .replace( />/g, "&gt;" );
-    const placeholder = `__INLINECODE_${placeholders.length}__`;
-    placeholders.push( `<code class="inline-code">${escaped}</code>` );
-    return placeholder;
-  } );
-
-  // Extract and protect markdown links
-  html = html.replace( /\[([^\]]+)\]\(([^)]+)\)/g, ( match, linkText, url ) => {
-    const placeholder = `__LINK_${placeholders.length}__`;
-    placeholders.push( `<a href="${url}" target="_blank" rel="noopener">${linkText}</a>` );
-    return placeholder;
-  } );
-
-  // Extract and protect bare URLs
-  html = html.replace( /(https?:\/\/[^\s<)\]]+)/g, ( match, url ) => {
-    if ( url.includes( "__" ) ) return match;
-    const placeholder = `__BAREURL_${placeholders.length}__`;
-    placeholders.push( `<a href="${url}" target="_blank" rel="noopener">${url}</a>` );
-    return placeholder;
-  } );
-
-  // Escape remaining HTML
-  html = html
-    .replace( /&/g, "&amp;" )
-    .replace( /</g, "&lt;" )
-    .replace( />/g, "&gt;" );
-
-  // Bold and italic
-  html = html.replace( /\*\*([^*]+)\*\*/g, "<strong>$1</strong>" );
-  html = html.replace( /\*([^*]+)\*/g, "<em>$1</em>" );
-  html = html.replace( /\n\n/g, "</p><p>" );
-  html = html.replace( /\n/g, "<br>" );
-
-  // Restore placeholders
-  for ( let i = 0; i < placeholders.length; i++ ) {
-    html = html.replace( new RegExp( `__(?:CODEBLOCK|INLINECODE|LINK|BAREURL)_${i}__`, "g" ), placeholders[ i ] );
+/** Strip snippet placeholders to show actual JSON preview */
+const snippetPreview = ( snippet ) => {
+  let text = snippet.insertText || "";
+  text = text.replace( /\$\{(\d+):([^}]+)\}/g, "$2" );
+  text = text.replace( /\$\{\d+\}/g, "" );
+  text = text.replace( /\\n/g, "\n" );
+  text = text.replace( /\\(.)/g, "$1" );
+  const lines = text.split( "\n" );
+  if ( lines.length > 6 ) {
+    return lines.slice( 0, 6 ).join( "\n" ) + "\n  ...";
   }
-
-  return `<p>${html}</p>`;
+  return text;
 };
 
-const valueToString = ( value ) => {
-  if ( typeof value === "string" ) return value;
-  try {
-    return JSON.stringify( value, null, props.tabSize );
-  } catch {
-    return "";
-  }
-};
-
-const stringToValue = ( str ) => {
-  if ( !str || str.trim() === "" ) return {};
-  try {
-    return JSON.parse( str );
-  } catch {
-    return str;
-  }
-};
-
+// ---------------------------------------------------------------------------
+// Schema management
+// ---------------------------------------------------------------------------
 const configureSchema = () => {
+  const model = modelRef.value;
   if ( !props.schema || !model ) return;
   const modelUri = model.uri.toString();
   globalSchemaRegistry.set( modelUri, {
@@ -517,606 +429,29 @@ const configureSchema = () => {
 };
 
 const cleanupSchema = () => {
+  const model = modelRef.value;
   if ( model ) {
-    const modelUri = model.uri.toString();
-    globalSchemaRegistry.delete( modelUri );
+    globalSchemaRegistry.delete( model.uri.toString() );
     updateGlobalSchemaConfig();
   }
 };
 
-// Analyze JSON context at cursor position
-const getJsonContext = ( text, offset ) => {
-  // Parse to find what context we're in
-  let depth = 0;
-  let inString = false;
-  let inKey = false;
-  let currentKey = "";
-  let parentKeys = [];
-  let isValue = false;
-  let bracketStack = []; // Track [ vs {
-  let lastKey = ""; // Track the most recent completed key
-
-  for ( let i = 0; i < offset; i++ ) {
-    const char = text[ i ];
-    const prevChar = i > 0 ? text[ i - 1 ] : "";
-
-    if ( inString ) {
-      if ( char === '"' && prevChar !== "\\" ) {
-        inString = false;
-        if ( inKey ) {
-          // Finished reading a key
-          inKey = false;
-          lastKey = currentKey;
-        }
-      } else if ( inKey ) {
-        currentKey += char;
-      }
-    } else {
-      if ( char === '"' ) {
-        inString = true;
-        // Check if this starts a key (after { or ,) or a value (after :)
-        const beforeQuote = text.substring( 0, i ).replace( /\s+/g, "" );
-        if ( beforeQuote.endsWith( ":" ) ) {
-          isValue = true;
-          inKey = false;
-        } else {
-          isValue = false;
-          inKey = true;
-          currentKey = "";
-        }
-      } else if ( char === "{" ) {
-        bracketStack.push( { type: "{", key: lastKey } );
-        depth++;
-        if ( lastKey ) {
-          parentKeys.push( lastKey );
-        }
-        lastKey = "";
-        currentKey = "";
-        isValue = false;
-      } else if ( char === "}" ) {
-        bracketStack.pop();
-        depth--;
-        if ( parentKeys.length > 0 ) parentKeys.pop();
-        currentKey = "";
-        lastKey = "";
-      } else if ( char === "[" ) {
-        bracketStack.push( { type: "[", key: lastKey } );
-        if ( lastKey ) {
-          parentKeys.push( lastKey );
-        }
-        lastKey = "";
-        currentKey = "";
-      } else if ( char === "]" ) {
-        bracketStack.pop();
-        if ( parentKeys.length > 0 ) parentKeys.pop();
-        currentKey = "";
-        lastKey = "";
-      } else if ( char === ":" ) {
-        isValue = true;
-      } else if ( char === "," ) {
-        currentKey = "";
-        lastKey = "";
-        isValue = false;
-      }
-    }
-  }
-
-  const lastBracket = bracketStack.length > 0 ? bracketStack[ bracketStack.length - 1 ] : null;
-
-  // Determine if we're typing inside quotes (for a key)
-  const textBeforeCursor = text.substring( 0, offset );
-  const lastQuoteIndex = textBeforeCursor.lastIndexOf( '"' );
-  let isTypingKey = false;
-  if ( lastQuoteIndex >= 0 ) {
-    // Check what's before the quote
-    const beforeLastQuote = textBeforeCursor.substring( 0, lastQuoteIndex ).replace( /\s+$/g, "" );
-    const afterLastQuote = textBeforeCursor.substring( lastQuoteIndex + 1 );
-    // If no closing quote and not after a colon, we're typing a key
-    // But make sure we're actually inside an unclosed quote (inString should be true from main parsing)
-    if ( !afterLastQuote.includes( '"' ) && !beforeLastQuote.endsWith( ":" ) && inString ) {
-      isTypingKey = true;
-    }
-  }
-
-  return {
-    depth,
-    parentKeys,
-    currentKey: inKey ? currentKey : lastKey,
-    isValue,
-    inArray: lastBracket?.type === "[",
-    inObject: lastBracket?.type === "{",
-    isTypingKey,
-    inString,
-    lastKey
-  };
-};
-
-// All QBML action keys organized by category
-const qbmlActionKeys = {
-  // Source/FROM actions
-  source: [ "from", "table", "fromSub", "fromRaw" ],
-  // SELECT actions
-  select: [ "select", "selectRaw", "distinct", "addSelect" ],
-  // WHERE clauses
-  where: [
-    "where", "andWhere", "orWhere",
-    "whereIn", "whereNotIn", "andWhereIn", "andWhereNotIn", "orWhereIn", "orWhereNotIn",
-    "whereBetween", "whereNotBetween", "andWhereBetween", "andWhereNotBetween", "orWhereBetween", "orWhereNotBetween",
-    "whereLike", "whereNotLike", "andWhereLike", "andWhereNotLike", "orWhereLike", "orWhereNotLike",
-    "whereNull", "whereNotNull", "andWhereNull", "andWhereNotNull", "orWhereNull", "orWhereNotNull",
-    "whereColumn", "andWhereColumn", "orWhereColumn",
-    "whereRaw", "andWhereRaw", "orWhereRaw",
-    "whereExists", "whereNotExists", "orWhereExists", "orWhereNotExists"
-  ],
-  // JOIN actions
-  join: [ "join", "leftJoin", "rightJoin", "innerJoin", "crossJoin", "joinSub", "joinRaw", "leftJoinSub", "rightJoinSub" ],
-  // GROUP BY / HAVING
-  group: [ "groupBy", "groupByRaw", "having", "havingRaw" ],
-  // ORDER BY
-  order: [ "orderBy", "orderByRaw", "orderByDesc", "reorder", "clearOrders" ],
-  // LIMIT / OFFSET
-  limit: [ "limit", "offset", "take", "skip" ],
-  // Locking
-  lock: [ "lock", "sharedLock", "lockForUpdate", "noLock", "skipLocked" ],
-  // CTEs
-  cte: [ "with", "withRecursive" ],
-  // Unions
-  union: [ "union", "unionAll" ],
-  // Executors
-  executor: [ "get", "first", "find", "value", "values", "count", "max", "min", "sum", "avg", "exists", "paginate" ],
-  // Mutations
-  mutation: [ "insert", "update", "delete" ],
-  // Conditional
-  conditional: [ "when" ],
-  // Param condition keys (inside "when" value object)
-  paramCondition: [ "param", "notEmpty", "isEmpty", "hasValue", "gt", "gte", "lt", "lte", "eq", "neq" ],
-  // Logical condition keys
-  logicalCondition: [ "and", "or", "not" ],
-  // Special references
-  special: [ "$param", "$raw" ]
-};
-
-// Get valid keys from schema based on context
-const getContextualCompletions = ( context ) => {
-  let suggestions = [];
-
-  // Helper to add a key suggestion with optional value snippet
-  const addKey = ( key, detail = "", doc = "", valueSnippet = "" ) => {
-    if ( suggestions.find( s => s.label === key ) ) return;
-    // If we have a value snippet and we're typing a key, include key + colon + value
-    let insertText;
-    if ( valueSnippet && context.isTypingKey ) {
-      insertText = `${key}": ${valueSnippet}`;
-    } else if ( context.isTypingKey ) {
-      insertText = key;
-    } else {
-      insertText = `"${key}"`;
-    }
-    suggestions.push( {
-      label: key,
-      kind: monaco.languages.CompletionItemKind.Property,
-      insertText,
-      documentation: doc,
-      detail,
-      filterText: key
-    } );
-  };
-
-  // Helper to add action object snippets (for when inside array at root level)
-  const addActionSnippet = ( key, detail, doc, valueSnippet ) => {
-    if ( suggestions.find( s => s.label === key ) ) return;
-    suggestions.push( {
-      label: key,
-      kind: monaco.languages.CompletionItemKind.Snippet,
-      insertText: `{ "${key}": ${valueSnippet} }`,
-      documentation: doc,
-      detail,
-      filterText: key
-    } );
-  };
-
-  // Check if we're inside a "when" block's condition object
-  const inWhenCondition = context.parentKeys.includes( "when" );
-  const isDirectlyInWhenValue = context.lastKey === "when" && context.isValue;
-
-  // Inside a param condition (the value of "when")
-  if ( isDirectlyInWhenValue || ( inWhenCondition && context.inObject ) ) {
-    // Offer param condition keys
-    for ( const key of qbmlActionKeys.paramCondition ) {
-      addKey( key, "Param condition", `Check parameter with ${key}` );
-    }
-    for ( const key of qbmlActionKeys.logicalCondition ) {
-      addKey( key, "Logical", `Combine conditions with ${key}` );
-    }
-    return suggestions;
-  }
-
-  // Inside the root array (not in an object) - show action snippets
-  if ( context.inArray && !context.inObject && context.parentKeys.length === 0 ) {
-    // Source actions
-    addActionSnippet( "from", "Source", "Specify table to query", '"$1"' );
-    addActionSnippet( "table", "Source", "Specify table (alias for from)", '"$1"' );
-
-    // Select
-    addActionSnippet( "select", "Select", "Select columns", '["$1"]' );
-
-    // Where clauses
-    addActionSnippet( "where", "Where", "Filter rows", '["$1", "$2"]' );
-    addActionSnippet( "whereIn", "Where", "Filter by multiple values", '["$1", [$2]]' );
-    addActionSnippet( "whereLike", "Where", "Pattern matching", '["$1", "%$2%"]' );
-    addActionSnippet( "whereNull", "Where", "Check for NULL", '"$1"' );
-    addActionSnippet( "whereBetween", "Where", "Range filter", '["$1", $2, $3]' );
-
-    // Joins
-    addActionSnippet( "join", "Join", "Inner join", '["$1", "$2", "=", "$3"]' );
-    addActionSnippet( "leftJoin", "Join", "Left join", '["$1", "$2", "=", "$3"]' );
-    addActionSnippet( "rightJoin", "Join", "Right join", '["$1", "$2", "=", "$3"]' );
-    addActionSnippet( "innerJoin", "Join", "Inner join", '["$1", "$2", "=", "$3"]' );
-    addActionSnippet( "crossJoin", "Join", "Cross join", '"$1"' );
-
-    // Group/Order
-    addActionSnippet( "groupBy", "Group", "Group results", '"$1"' );
-    addActionSnippet( "orderBy", "Order", "Sort ascending", '["$1", "asc"]' );
-    addActionSnippet( "orderByDesc", "Order", "Sort descending", '"$1"' );
-
-    // Limit
-    addActionSnippet( "limit", "Limit", "Limit results", "$1" );
-    addActionSnippet( "offset", "Limit", "Skip rows", "$1" );
-
-    // Executors
-    addActionSnippet( "get", "Executor", "Get all results", "true" );
-    addActionSnippet( "first", "Executor", "Get first result", "true" );
-    addActionSnippet( "paginate", "Executor", "Paginated results", '{ "page": 1, "maxRows": $1 }' );
-    addActionSnippet( "count", "Executor", "Count rows", "true" );
-
-    // Conditional
-    addActionSnippet( "when", "Conditional", "Conditional action", '{ "param": "$1", "notEmpty": true }, "$2": $3' );
-
-    // CTE
-    addActionSnippet( "with", "CTE", "Common Table Expression", '"$1", "query": [$2]' );
-
-    return suggestions;
-  }
-
-  // At action level (inside an object at depth 1-2)
-  if ( context.inObject && !inWhenCondition ) {
-    // Add keys with their typical value patterns
-    addKey( "from", "Source", "Specify table to query", '"$1"' );
-    addKey( "table", "Source", "Specify table (alias for from)", '"$1"' );
-    addKey( "fromSub", "Source", "Subquery as source", "[$1]" );
-    addKey( "fromRaw", "Source", "Raw SQL source", '"$1"' );
-
-    addKey( "select", "Select", "Select columns", '["$1"]' );
-    addKey( "selectRaw", "Select", "Raw select expression", '"$1"' );
-    addKey( "distinct", "Select", "Select distinct", "true" );
-    addKey( "addSelect", "Select", "Add to select", '["$1"]' );
-
-    addKey( "where", "Where", "Filter rows", '["$1", "$2"]' );
-    addKey( "whereIn", "Where", "Filter by values", '["$1", [$2]]' );
-    addKey( "whereLike", "Where", "Pattern match", '["$1", "%$2%"]' );
-    addKey( "whereNull", "Where", "Check NULL", '"$1"' );
-    addKey( "whereBetween", "Where", "Range filter", '["$1", $2, $3]' );
-    addKey( "whereColumn", "Where", "Compare columns", '["$1", "$2"]' );
-    addKey( "whereRaw", "Where", "Raw WHERE", '"$1"' );
-    addKey( "andWhere", "Where", "AND filter", '["$1", "$2"]' );
-    addKey( "orWhere", "Where", "OR filter", '["$1", "$2"]' );
-
-    addKey( "join", "Join", "Inner join", '["$1", "$2", "=", "$3"]' );
-    addKey( "leftJoin", "Join", "Left join", '["$1", "$2", "=", "$3"]' );
-    addKey( "rightJoin", "Join", "Right join", '["$1", "$2", "=", "$3"]' );
-    addKey( "innerJoin", "Join", "Inner join", '["$1", "$2", "=", "$3"]' );
-    addKey( "crossJoin", "Join", "Cross join", '"$1"' );
-
-    addKey( "groupBy", "Group", "Group results", '"$1"' );
-    addKey( "having", "Group", "Having clause", '["$1", "$2"]' );
-
-    addKey( "orderBy", "Order", "Sort asc", '["$1", "asc"]' );
-    addKey( "orderByDesc", "Order", "Sort desc", '"$1"' );
-    addKey( "orderByRaw", "Order", "Raw order", '"$1"' );
-
-    addKey( "limit", "Limit", "Limit rows", "$1" );
-    addKey( "offset", "Limit", "Skip rows", "$1" );
-
-    addKey( "get", "Executor", "Get all", "true" );
-    addKey( "first", "Executor", "Get first", "true" );
-    addKey( "paginate", "Executor", "Paginate", '{ "page": 1, "maxRows": $1 }' );
-    addKey( "count", "Executor", "Count rows", "true" );
-
-    addKey( "when", "Conditional", "Conditional", '{ "param": "$1", "notEmpty": true }' );
-
-    addKey( "with", "CTE", "CTE name", '"$1"' );
-    addKey( "query", "CTE", "CTE query", "[$1]" );
-  }
-
-  // When in value position, offer $param and $raw
-  if ( context.isValue && !context.isTypingKey ) {
-    suggestions.push(
-      {
-        label: "$param",
-        kind: monaco.languages.CompletionItemKind.Reference,
-        insertText: '{ "$param": "$1" }',
-        documentation: "Reference a runtime parameter",
-        detail: "Parameter"
-      },
-      {
-        label: "$raw",
-        kind: monaco.languages.CompletionItemKind.Reference,
-        insertText: '{ "$raw": "$1" }',
-        documentation: "Embed raw SQL",
-        detail: "Raw SQL"
-      }
-    );
-  }
-
-  return suggestions;
-};
-
-const registerSnippets = () => {
-  snippetDisposable = monaco.languages.registerCompletionItemProvider( "json", {
-    triggerCharacters: [ '"', ":" ],
-    provideCompletionItems( targetModel, position ) {
-      if ( !model || targetModel.uri.toString() !== model.uri.toString() ) {
-        return { suggestions: [] };
-      }
-
-      const text = targetModel.getValue();
-      const offset = targetModel.getOffsetAt( position );
-      const context = getJsonContext( text, offset );
-
-      // Determine the range for replacement
-      const word = targetModel.getWordUntilPosition( position );
-      const lineText = targetModel.getLineContent( position.lineNumber );
-
-      let range = {
-        startLineNumber: position.lineNumber,
-        endLineNumber: position.lineNumber,
-        startColumn: word.startColumn,
-        endColumn: position.column,
-      };
-
-      // If typing inside quotes for a key, adjust range to replace just the typed text
-      if ( context.isTypingKey ) {
-        const beforeCursor = lineText.substring( 0, position.column - 1 );
-        const lastQuote = beforeCursor.lastIndexOf( '"' );
-        if ( lastQuote >= 0 ) {
-          const afterCursor = lineText.substring( position.column - 1 );
-          const nextQuote = afterCursor.indexOf( '"' );
-          range = {
-            startLineNumber: position.lineNumber,
-            endLineNumber: position.lineNumber,
-            startColumn: lastQuote + 2,
-            endColumn: nextQuote >= 0 ? position.column + nextQuote : position.column,
-          };
-        }
-      }
-
-      // Get contextual completions
-      const contextSuggestions = getContextualCompletions( context );
-
-      // Filter snippets based on context
-      let snippetSuggestions = [];
-      if ( !context.isTypingKey && !context.isValue ) {
-        snippetSuggestions = ( props.snippets || [] )
-          .filter( s => s.label.startsWith( "qbml-" ) )
-          .map( ( snippet ) => ( {
-            label: snippet.label,
-            kind: monaco.languages.CompletionItemKind.Snippet,
-            insertText: snippet.insertText,
-            insertTextRules: monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet,
-            documentation: { value: snippet.documentation || "", isTrusted: true },
-            detail: snippet.detail || snippet.label,
-            sortText: `2_${snippet.label}`,
-          } ) );
-      }
-
-      // Merge suggestions
-      const allSuggestions = [
-        ...contextSuggestions.map( s => ( {
-          ...s,
-          range,
-          insertTextRules: s.insertText?.includes( "$" ) ? monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet : undefined,
-          sortText: `0_${s.label}`,
-        } ) ),
-        ...snippetSuggestions.map( s => ( { ...s, range } ) )
-      ];
-
-      return { suggestions: allSuggestions };
-    },
-  } );
-};
-
-// Schema description map
-let schemaDescriptionMap = new Map();
-
-const buildDescriptionMap = () => {
-  schemaDescriptionMap.clear();
-  if ( !props.schema ) return;
-
-  const definitions = props.schema.definitions || {};
-
-  const extractDescriptions = ( obj ) => {
-    if ( !obj || typeof obj !== "object" ) return;
-
-    if ( obj.definitions ) {
-      for ( const [ defName, def ] of Object.entries( obj.definitions ) ) {
-        if ( def.description ) {
-          schemaDescriptionMap.set( defName, def.description );
-        }
-        if ( def.properties ) {
-          for ( const [ propKey, propDef ] of Object.entries( def.properties ) ) {
-            // Handle when/else by looking up their referenced definition
-            if ( propKey === "when" || propKey === "else" ) {
-              if ( propDef.$ref ) {
-                const refKey = propDef.$ref.split( "/" ).pop();
-                const refDef = definitions[ refKey ];
-                if ( refDef?.description && !schemaDescriptionMap.has( propKey ) ) {
-                  schemaDescriptionMap.set( propKey, refDef.description );
-                }
-              }
-              continue;
-            }
-            if ( propDef.description ) {
-              schemaDescriptionMap.set( propKey, propDef.description );
-            } else if ( propDef.$ref ) {
-              const refKey = propDef.$ref.split( "/" ).pop();
-              if ( refKey.endsWith( "Value" ) && def.description ) {
-                schemaDescriptionMap.set( propKey, def.description );
-              } else {
-                const refDef = definitions[ refKey ];
-                if ( refDef?.description ) {
-                  schemaDescriptionMap.set( propKey, refDef.description );
-                }
-              }
-            } else if ( !schemaDescriptionMap.has( propKey ) && def.description ) {
-              schemaDescriptionMap.set( propKey, def.description );
-            }
-          }
-        }
-        extractDescriptions( def );
-      }
-    }
-
-    if ( obj.properties ) {
-      for ( const [ key, propDef ] of Object.entries( obj.properties ) ) {
-        if ( propDef.description && !schemaDescriptionMap.has( key ) ) {
-          schemaDescriptionMap.set( key, propDef.description );
-        }
-      }
-    }
-  };
-
-  extractDescriptions( props.schema );
-};
-
-// Get all action keys as flat array for error message suggestions
-const getAllActionKeys = () => {
-  return [
-    ...qbmlActionKeys.source,
-    ...qbmlActionKeys.select,
-    ...qbmlActionKeys.where,
-    ...qbmlActionKeys.join,
-    ...qbmlActionKeys.group,
-    ...qbmlActionKeys.order,
-    ...qbmlActionKeys.limit,
-    ...qbmlActionKeys.lock,
-    ...qbmlActionKeys.cte,
-    ...qbmlActionKeys.union,
-    ...qbmlActionKeys.executor,
-    ...qbmlActionKeys.mutation,
-    ...qbmlActionKeys.conditional
-  ];
-};
-
-const detectContext = ( line ) => {
-  if ( !model ) return "action";
-  // Look at content around the error line to determine context
-  const startLine = Math.max( 1, line - 10 );
-  const content = model.getValueInRange( {
-    startLineNumber: startLine,
-    startColumn: 1,
-    endLineNumber: line,
-    endColumn: model.getLineMaxColumn( line )
-  } );
-
-  // Check if we're inside a "when" block by looking for unclosed when
-  const whenMatches = ( content.match( /"when"\s*:/g ) || [] ).length;
-
-  // If we find "param" nearby, we're likely in a param condition
-  if ( content.includes( '"param"' ) && !content.includes( '"where' ) ) {
-    return "paramCondition";
-  }
-
-  // If we find "and", "or", "not" as keys (not values), likely logical condition
-  if ( /"(and|or|not)"\s*:/.test( content ) ) {
-    return "logicalCondition";
-  }
-
-  // If we're in a when block (has when but action isn't closed)
-  if ( whenMatches > 0 ) {
-    return "conditional";
-  }
-
-  return "action";
-};
-
-const friendlyErrorMessage = ( message, line ) => {
-  // Extract property name from "Property X is not allowed" style messages
-  const propMatch = message.match( /Property (.+?) is not allowed/i );
-  if ( propMatch ) {
-    const badProp = propMatch[ 1 ];
-    const context = detectContext( line );
-
-    // Get valid keys based on detected context
-    let validKeys;
-    let contextHint = "";
-    if ( context === "conditional" ) {
-      validKeys = [ ...qbmlActionKeys.where, "when", "else" ];
-      contextHint = " In a 'when' block, use WHERE clauses like: where, whereIn, whereLike, etc.";
-    } else if ( context === "paramCondition" ) {
-      validKeys = qbmlActionKeys.paramCondition;
-      contextHint = " In a param condition, valid keys are: param, notEmpty, isEmpty, hasValue, gt, gte, lt, lte, eq, neq.";
-    } else if ( context === "logicalCondition" ) {
-      validKeys = qbmlActionKeys.logicalCondition;
-      contextHint = " In a logical condition, valid keys are: and, or, not.";
-    } else {
-      validKeys = getAllActionKeys();
-    }
-
-    // Find similar valid keys in this context
-    const similar = validKeys.filter( k =>
-      k.toLowerCase().includes( badProp.toLowerCase().substring( 0, 3 ) ) ||
-      badProp.toLowerCase().includes( k.toLowerCase().substring( 0, 3 ) )
-    ).slice( 0, 5 );
-
-    const suggestion = similar.length > 0
-      ? ` Did you mean: ${similar.join( ", " )}?`
-      : contextHint || " Valid keys include: from, select, where, join, orderBy, limit, get, etc.";
-
-    return `Unknown property "${badProp}".${suggestion}`;
-  }
-  return message;
-};
-
-// Guard to prevent infinite loop from setModelMarkers triggering onDidChangeMarkers
-let isUpdatingMarkers = false;
-
+// ---------------------------------------------------------------------------
+// Validation
+// ---------------------------------------------------------------------------
 const updateValidationState = () => {
-  if ( !model || isUpdatingMarkers ) return;
+  const model = modelRef.value;
+  if ( !model ) return;
 
   const markers = monaco.editor.getModelMarkers( { resource: model.uri } );
-  const errors = markers.filter( ( m ) => m.severity === monaco.MarkerSeverity.Error );
+  const errors = markers.filter( m => m.severity === monaco.MarkerSeverity.Error );
 
-  // Check if we need to update markers with friendly messages
-  // Only do this if the messages aren't already friendly (to avoid re-processing)
-  const needsFriendlyUpdate = markers.some( m => m.message.includes( "Property" ) && m.message.includes( "is not allowed" ) );
-
-  if ( needsFriendlyUpdate ) {
-    // Replace Monaco's markers with friendlier messages
-    const friendlyMarkers = markers.map( m => ( {
-      ...m,
-      message: friendlyErrorMessage( m.message, m.startLineNumber ),
-    } ) );
-
-    isUpdatingMarkers = true;
-    monaco.editor.setModelMarkers( model, "json", friendlyMarkers );
-    isUpdatingMarkers = false;
-
-    validationErrors.value = friendlyMarkers
-      .filter( m => m.severity === monaco.MarkerSeverity.Error )
-      .map( ( m ) => ( {
-        message: m.message,
-        path: m.relatedInformation?.[0]?.message || "",
-        line: m.startLineNumber,
-        column: m.startColumn,
-      } ) );
-  } else {
-    validationErrors.value = errors.map( ( m ) => ( {
-      message: m.message,
-      path: m.relatedInformation?.[0]?.message || "",
-      line: m.startLineNumber,
-      column: m.startColumn,
-    } ) );
-  }
+  validationErrors.value = errors.map( m => ( {
+    message: m.message,
+    path: m.relatedInformation?.[ 0 ]?.message || "",
+    line: m.startLineNumber,
+    column: m.startColumn,
+  } ) );
 
   hasErrors.value = errors.length > 0;
   errorCount.value = errors.length;
@@ -1124,10 +459,10 @@ const updateValidationState = () => {
   try {
     JSON.parse( model.getValue() );
     isValidJson.value = !hasErrors.value;
-  } catch ( e ) {
+  } catch {
     isValidJson.value = false;
     if ( validationErrors.value.length === 0 ) {
-      validationErrors.value = [ { message: e.message, path: "", line: 1, column: 1 } ];
+      validationErrors.value = [ { message: "Invalid JSON", path: "", line: 1, column: 1 } ];
       hasErrors.value = true;
       errorCount.value = 1;
     }
@@ -1137,6 +472,7 @@ const updateValidationState = () => {
 };
 
 const goToError = ( error ) => {
+  const editor = editorRef.value;
   if ( editor && error.line ) {
     editor.setPosition( { lineNumber: error.line, column: error.column || 1 } );
     editor.revealLineInCenter( error.line );
@@ -1144,13 +480,18 @@ const goToError = ( error ) => {
   }
 };
 
+// ---------------------------------------------------------------------------
+// Status bar helpers
+// ---------------------------------------------------------------------------
 const updateUndoRedoState = () => {
+  const model = modelRef.value;
   if ( !model ) return;
   canUndo.value = model.getAlternativeVersionId() > 1;
   canRedo.value = false;
 };
 
 const updateCursorInfo = () => {
+  const editor = editorRef.value;
   if ( !editor ) return;
   const position = editor.getPosition();
   if ( position ) {
@@ -1160,52 +501,111 @@ const updateCursorInfo = () => {
 };
 
 const updateContentInfo = () => {
+  const model = modelRef.value;
   if ( !model ) return;
   const content = model.getValue();
   charCount.value = content.length;
   lineCount.value = model.getLineCount();
 };
 
-const undo = () => editor?.trigger( "toolbar", "undo", null );
-const redo = () => editor?.trigger( "toolbar", "redo", null );
-const formatDocument = () => editor?.getAction( "editor.action.formatDocument" ).run();
+// ---------------------------------------------------------------------------
+// Toolbar actions
+// ---------------------------------------------------------------------------
+const undo = () => editorRef.value?.trigger( "toolbar", "undo", null );
+const redo = () => editorRef.value?.trigger( "toolbar", "redo", null );
+const formatDocument = () => {
+  const editor = editorRef.value;
+  const model = modelRef.value;
+  if ( !editor || !model ) return;
+  try {
+    const parsed = JSON.parse( editor.getValue() );
+    const formatted = stringify( parsed, { indent: props.tabSize, maxLength: 80 } );
+    editor.pushUndoStop();
+    editor.executeEdits( "format", [ {
+      range: model.getFullModelRange(),
+      text: formatted,
+      forceMoveMarkers: true,
+    } ] );
+    editor.pushUndoStop();
+  } catch { /* ignore invalid JSON */ }
+};
 
 const compactJson = () => {
-  console.log( "[MonacoJsonEditor] compactJson called, editor:", !!editor, "model:", !!model );
-  if ( !editor || !model ) {
-    console.warn( "[MonacoJsonEditor] compactJson: editor or model not ready" );
-    return;
-  }
+  const editor = editorRef.value;
+  const model = modelRef.value;
+  if ( !editor || !model ) return;
   try {
-    const content = editor.getValue();
-    console.log( "[MonacoJsonEditor] compactJson: content length:", content.length );
-    const parsed = JSON.parse( content );
+    const parsed = JSON.parse( editor.getValue() );
     const compacted = JSON.stringify( parsed );
-    console.log( "[MonacoJsonEditor] compactJson: compacted length:", compacted.length );
-    const fullRange = model.getFullModelRange();
-    console.log( "[MonacoJsonEditor] compactJson: fullRange:", fullRange );
-    editor.executeEdits( "compact", [ { range: fullRange, text: compacted, forceMoveMarkers: true } ] );
-    console.log( "[MonacoJsonEditor] compactJson: edit executed" );
-  } catch ( err ) {
-    console.warn( "[MonacoJsonEditor] compactJson error:", err );
-  }
+    editor.pushUndoStop();
+    editor.executeEdits( "compact", [ {
+      range: model.getFullModelRange(),
+      text: compacted,
+      forceMoveMarkers: true,
+    } ] );
+    editor.pushUndoStop();
+  } catch { /* ignore invalid JSON */ }
 };
 
 const sortKeys = () => {
-  if ( !editor ) return;
+  const editor = editorRef.value;
+  const model = modelRef.value;
+  if ( !editor || !model ) return;
   try {
-    const content = editor.getValue();
-    const parsed = JSON.parse( content );
+    const parsed = JSON.parse( editor.getValue() );
     const sorted = sortObjectKeys( parsed );
-    const formatted = JSON.stringify( sorted, null, props.tabSize );
-    editor.setValue( formatted );
+    const formatted = stringify( sorted, { indent: props.tabSize, maxLength: 80 } );
+    editor.pushUndoStop();
+    editor.executeEdits( "sort-keys", [ {
+      range: model.getFullModelRange(),
+      text: formatted,
+      forceMoveMarkers: true,
+    } ] );
+    editor.pushUndoStop();
   } catch { /* ignore invalid JSON */ }
 };
+
+// QBML-aware key priority — follows natural SQL clause order
+const qbmlKeyOrder = [
+  "with", "withRecursive",
+  "from", "table", "fromRaw", "fromSub",
+  "query", "alias",
+  "join", "innerJoin", "leftJoin", "rightJoin", "leftOuterJoin", "rightOuterJoin",
+  "crossJoin", "joinRaw", "leftJoinRaw", "rightJoinRaw", "crossJoinRaw",
+  "joinSub", "leftJoinSub", "rightJoinSub", "on",
+  "select", "addSelect", "selectRaw", "subSelect", "distinct",
+  "selectCount", "selectSum", "selectAvg", "selectMin", "selectMax",
+  "when", "else",
+  "insert", "update", "addUpdate", "delete", "upsert", "insertUsing",
+  "where", "andWhere", "orWhere",
+  "whereIn", "whereNotIn", "andWhereIn", "orWhereIn", "andWhereNotIn", "orWhereNotIn",
+  "whereBetween", "whereNotBetween", "andWhereBetween", "orWhereBetween",
+  "whereLike", "whereNotLike", "andWhereLike", "orWhereLike",
+  "whereNull", "whereNotNull", "andWhereNull", "orWhereNull",
+  "whereColumn", "andWhereColumn", "orWhereColumn",
+  "whereExists", "whereNotExists",
+  "whereRaw", "andWhereRaw", "orWhereRaw",
+  "groupBy", "having", "andHaving", "orHaving", "havingRaw",
+  "orderBy", "orderByAsc", "orderByDesc", "orderByRaw", "reorder", "clearOrders",
+  "union", "unionAll",
+  "limit", "take", "offset", "skip", "forPage",
+  "lock", "lockForUpdate", "sharedLock", "noLock", "clearLock",
+  "get", "first", "find", "value", "values",
+  "count", "sum", "avg", "min", "max", "exists",
+  "paginate", "simplePaginate", "toSQL", "dump",
+  "datasource", "timeout",
+];
+const qbmlKeyPriority = Object.fromEntries( qbmlKeyOrder.map( ( k, i ) => [ k, i ] ) );
 
 const sortObjectKeys = ( obj ) => {
   if ( Array.isArray( obj ) ) return obj.map( sortObjectKeys );
   if ( obj !== null && typeof obj === "object" ) {
-    return Object.keys( obj ).sort().reduce( ( result, key ) => {
+    return Object.keys( obj ).sort( ( a, b ) => {
+      const pa = qbmlKeyPriority[ a ] ?? 999;
+      const pb = qbmlKeyPriority[ b ] ?? 999;
+      if ( pa !== pb ) return pa - pb;
+      return a.localeCompare( b );
+    } ).reduce( ( result, key ) => {
       result[ key ] = sortObjectKeys( obj[ key ] );
       return result;
     }, {} );
@@ -1213,12 +613,37 @@ const sortObjectKeys = ( obj ) => {
   return obj;
 };
 
-const expandAll = () => editor?.getAction( "editor.unfoldAll" ).run();
-const collapseAll = () => editor?.getAction( "editor.foldAll" ).run();
+const expandAll = () => editorRef.value?.getAction( "editor.unfoldAll" ).run();
+const collapseAll = () => editorRef.value?.getAction( "editor.foldAll" ).run();
+
+// Count how many top-level array elements are fully closed above/on the cursor line.
+const getArrayInsertIndex = ( content, cursorLine ) => {
+  let depth = 0;
+  let index = 0;
+  let inString = false;
+  let escaped = false;
+  let line = 1;
+  for ( const ch of content ) {
+    if ( line > cursorLine ) break;
+    if ( ch === "\n" ) { line++; continue; }
+    if ( escaped ) { escaped = false; continue; }
+    if ( ch === "\\" && inString ) { escaped = true; continue; }
+    if ( ch === "\"" ) { inString = !inString; continue; }
+    if ( inString ) continue;
+    if ( ch === "{" || ch === "[" ) depth++;
+    if ( ch === "}" || ch === "]" ) {
+      depth--;
+      if ( depth === 1 ) index++;
+    }
+  }
+  return index;
+};
 
 const insertSnippet = ( snippet ) => {
+  const editor = editorRef.value;
+  const model = modelRef.value;
   if ( !editor || !model ) return;
-  const position = editor.getPosition();
+
   let text = snippet.insertText || "";
   // Process snippet placeholders: ${1:default} -> default, ${1} -> ""
   text = text.replace( /\$\{(\d+):([^}]+)\}/g, "$2" );
@@ -1227,70 +652,73 @@ const insertSnippet = ( snippet ) => {
   text = text.replace( /\\n/g, "\n" );
   // Remove escape backslashes (\\$ -> $) for JSON keys like $param
   text = text.replace( /\\(.)/g, "$1" );
-  const range = {
-    startLineNumber: position.lineNumber,
-    startColumn: position.column,
-    endLineNumber: position.lineNumber,
-    endColumn: position.column,
-  };
-  editor.executeEdits( "snippet", [ { range, text, forceMoveMarkers: true } ] );
-  editor.focus();
-  setTimeout( () => editor.getAction( "editor.action.formatDocument" )?.run(), 50 );
-};
 
-const showHoverTooltip = ( title, content, x, y ) => {
-  if ( hideTimeoutId ) {
-    clearTimeout( hideTimeoutId );
-    hideTimeoutId = null;
-  }
-  hoverTooltip.value = {
-    visible: true,
-    pinned: false,
-    title,
-    htmlContent: markdownToHtml( content ),
-    x,
-    y,
-  };
-};
+  try {
+    const isTemplate = text.trimStart().startsWith( "[" );
+    let items;
 
-const hideHoverTooltip = ( immediate = true, force = false ) => {
-  if ( hoverTooltip.value.pinned && !force ) return;
-  if ( isMouseOverTooltip && !force ) return; // Don't hide while mouse is over tooltip
-  if ( immediate ) {
-    hoverTooltip.value.visible = false;
-    hoverTooltip.value.pinned = false;
-    isMouseOverTooltip = false;
-  } else {
-    // Delay to allow user to move mouse to tooltip for scrolling
-    hideTimeoutId = setTimeout( () => {
-      if ( !hoverTooltip.value.pinned && !isMouseOverTooltip ) {
-        hoverTooltip.value.visible = false;
+    if ( isTemplate ) {
+      items = JSON.parse( text );
+    } else {
+      // Single object or multiple objects separated by commas
+      try {
+        items = [ JSON.parse( text ) ];
+      } catch {
+        items = JSON.parse( `[${text}]` );
       }
-    }, 400 );
+    }
+
+    if ( isTemplate ) {
+      // Full query template — replace entire editor content
+      const formatted = stringify( items, { indent: props.tabSize, maxLength: 80 } );
+      editor.pushUndoStop();
+      editor.executeEdits( "snippet", [ {
+        range: model.getFullModelRange(),
+        text: formatted,
+        forceMoveMarkers: true,
+      } ] );
+      editor.pushUndoStop();
+    } else {
+      // Clause snippet — splice into existing array at cursor position
+      const currentContent = editor.getValue();
+      const parsed = JSON.parse( currentContent );
+      if ( Array.isArray( parsed ) ) {
+        const position = editor.getPosition();
+        const insertIdx = getArrayInsertIndex( currentContent, position.lineNumber );
+        parsed.splice( insertIdx, 0, ...items );
+        const formatted = stringify( parsed, { indent: props.tabSize, maxLength: 80 } );
+        editor.pushUndoStop();
+        editor.executeEdits( "snippet", [ {
+          range: model.getFullModelRange(),
+          text: formatted,
+          forceMoveMarkers: true,
+        } ] );
+        editor.pushUndoStop();
+      }
+    }
+    editor.focus();
+  } catch {
+    // Fallback: raw text insertion at cursor
+    const position = editor.getPosition();
+    const range = {
+      startLineNumber: position.lineNumber,
+      startColumn: position.column,
+      endLineNumber: position.lineNumber,
+      endColumn: position.column,
+    };
+    editor.pushUndoStop();
+    editor.executeEdits( "snippet", [ { range, text, forceMoveMarkers: true } ] );
+    editor.pushUndoStop();
+    editor.focus();
   }
 };
 
-const togglePinTooltip = () => {
-  hoverTooltip.value.pinned = !hoverTooltip.value.pinned;
-};
-
-const onTooltipMouseEnter = () => {
-  isMouseOverTooltip = true;
-  if ( hideTimeoutId ) {
-    clearTimeout( hideTimeoutId );
-    hideTimeoutId = null;
-  }
-};
-
-const onTooltipMouseLeave = () => {
-  isMouseOverTooltip = false;
-  hideHoverTooltip( false );
-};
-
+// ---------------------------------------------------------------------------
+// Editor initialization
+// ---------------------------------------------------------------------------
 const initEditor = () => {
   if ( !editorContainer.value ) return;
 
-  const initialValue = valueToString( props.modelValue );
   const modelUri = monaco.Uri.parse( `inmemory://model/${Date.now()}.json` );
 
   if ( props.schema ) {
@@ -1302,14 +730,12 @@ const initEditor = () => {
     updateGlobalSchemaConfig();
   }
 
-  model = monaco.editor.createModel( initialValue, "json", modelUri );
+  const model = markRaw( monaco.editor.createModel( props.modelValue, "json", modelUri ) );
+  modelRef.value = model;
 
-  registerSnippets();
-  buildDescriptionMap();
-
-  editor = monaco.editor.create( editorContainer.value, {
+  const editor = markRaw( monaco.editor.create( editorContainer.value, {
     model,
-    theme: props.theme,
+    theme: isDark.value ? "vs-dark" : "vs",
     readOnly: props.readOnly,
     minimap: { enabled: props.minimap },
     lineNumbers: props.lineNumbers ? "on" : "off",
@@ -1323,7 +749,7 @@ const initEditor = () => {
     formatOnPaste: true,
     quickSuggestions: { strings: true, other: true, comments: false },
     suggestOnTriggerCharacters: true,
-    acceptSuggestionOnEnter: "off", // Use Tab to accept, Enter always inserts newline
+    acceptSuggestionOnEnter: "off",
     acceptSuggestionOnCommitCharacter: false,
     autoClosingBrackets: "always",
     autoClosingQuotes: "always",
@@ -1341,16 +767,18 @@ const initEditor = () => {
       shareSuggestSelections: false,
     },
     hover: { enabled: true, delay: 300 },
-  } );
+  } ) );
+  editorRef.value = editor;
 
+  // Ctrl+Space → trigger suggest
   editor.addCommand( monaco.KeyMod.CtrlCmd | monaco.KeyCode.Space, () => {
     editor.trigger( "keyboard", "editor.action.triggerSuggest", {} );
   } );
 
+  // OUTBOUND: editor content → parent (string v-model)
   editor.onDidChangeModelContent( () => {
-    const value = editor.getValue();
-    const parsed = stringToValue( value );
-    emit( "update:modelValue", parsed );
+    if ( isApplyingExternalChange ) return;
+    emit( "update:modelValue", editor.getValue() );
     updateContentInfo();
     updateUndoRedoState();
     setTimeout( updateValidationState, 100 );
@@ -1358,50 +786,9 @@ const initEditor = () => {
 
   editor.onDidChangeCursorPosition( () => updateCursorInfo() );
 
-  // Custom hover
-  let lastHoverWord = "";
-  editor.onMouseMove( ( e ) => {
-    if ( hoverTooltip.value.pinned ) return;
-    if ( e.target.type !== monaco.editor.MouseTargetType.CONTENT_TEXT ) {
-      // When moving off text, start delayed hide (gives user time to reach tooltip)
-      if ( hoverTooltip.value.visible ) {
-        hideHoverTooltip( false );
-      }
-      return;
-    }
-    const position = e.target.position;
-    if ( !position ) return;
-    const word = model.getWordAtPosition( position );
-    if ( !word ) {
-      hideHoverTooltip( false );
-      return;
-    }
-    const key = word.word.replace( /^["']|["']$/g, "" );
-    if ( key === lastHoverWord && hoverTooltip.value.visible ) return;
-    const description = schemaDescriptionMap.get( key );
-    if ( !description ) {
-      hideHoverTooltip( false );
-      return;
-    }
-    lastHoverWord = key;
-    const rootRect = rootContainer.value?.getBoundingClientRect() || { left: 0, top: 0 };
-    // Position tooltip close to cursor to minimize gap
-    const x = e.event.posx - rootRect.left + 5;
-    const y = e.event.posy - rootRect.top + 10;
-    if ( hoverTimeoutId ) clearTimeout( hoverTimeoutId );
-    hoverTimeoutId = setTimeout( () => showHoverTooltip( key, description, x, y ), 400 );
-  } );
-
-  editor.onMouseLeave( () => {
-    if ( hoverTimeoutId ) {
-      clearTimeout( hoverTimeoutId );
-      hoverTimeoutId = null;
-    }
-    hideHoverTooltip( false );
-  } );
-
+  // Validation from Monaco's JSON worker
   monaco.editor.onDidChangeMarkers( ( uris ) => {
-    if ( model && uris.some( ( uri ) => uri.toString() === model.uri.toString() ) ) {
+    if ( model && uris.some( uri => uri.toString() === model.uri.toString() ) ) {
       updateValidationState();
     }
   } );
@@ -1413,63 +800,47 @@ const initEditor = () => {
   emit( "ready", { editor, model } );
 };
 
-watch(
-  () => props.modelValue,
-  ( newValue ) => {
-    if ( !editor ) return;
-    const currentValue = editor.getValue();
-    const newValueStr = valueToString( newValue );
-    if ( currentValue !== newValueStr ) {
-      const position = editor.getPosition();
-      editor.setValue( newValueStr );
-      if ( position ) editor.setPosition( position );
-    }
-  },
-  { deep: true }
-);
+// ---------------------------------------------------------------------------
+// Watchers
+// ---------------------------------------------------------------------------
 
-watch(
-  () => props.schema,
-  ( newSchema ) => {
-    console.log( "[MonacoJsonEditor] schema watcher fired, has schema:", !!newSchema, "has model:", !!model );
-    if ( newSchema && model ) {
-      configureSchema();
-      buildDescriptionMap();
-      console.log( "[MonacoJsonEditor] Description map built, size:", schemaDescriptionMap.size );
-      setTimeout( updateValidationState, 200 );
-    }
-  },
-  { deep: true }
-);
+// INBOUND: parent string → editor (preserves cursor + undo)
+watch( () => props.modelValue, ( newValue ) => {
+  const editor = editorRef.value;
+  const model = modelRef.value;
+  if ( !editor || !model ) return;
+  if ( editor.getValue() === newValue ) return;
+  isApplyingExternalChange = true;
+  try {
+    editor.pushUndoStop();
+    editor.executeEdits( "external-sync", [ {
+      range: model.getFullModelRange(),
+      text: newValue,
+      forceMoveMarkers: true,
+    } ] );
+    editor.pushUndoStop();
+  } finally {
+    isApplyingExternalChange = false;
+  }
+} );
 
-watch(
-  () => props.snippets,
-  ( newSnippets ) => {
-    console.log( "[MonacoJsonEditor] snippets watcher fired, new count:", newSnippets?.length || 0 );
-    if ( snippetDisposable ) {
-      snippetDisposable.dispose();
-      snippetDisposable = null;
-    }
-    registerSnippets();
+watch( () => props.schema, ( newSchema ) => {
+  if ( newSchema && modelRef.value ) {
+    configureSchema();
+    setTimeout( updateValidationState, 200 );
+  }
+}, { deep: true } );
 
-    // Also rebuild schema/descriptions when snippets load (they come together from schema registry)
-    if ( props.schema && model && schemaDescriptionMap.size === 0 ) {
-      console.log( "[MonacoJsonEditor] Rebuilding schema config from snippets watcher" );
-      configureSchema();
-      buildDescriptionMap();
-      console.log( "[MonacoJsonEditor] Description map built, size:", schemaDescriptionMap.size );
-    }
-  },
-  { deep: true }
-);
+watch( isDark, ( dark ) => monaco.editor.setTheme( dark ? "vs-dark" : "vs" ) );
+watch( () => props.readOnly, ( newValue ) => editorRef.value?.updateOptions( { readOnly: newValue } ) );
 
-watch( () => props.theme, ( newTheme ) => monaco.editor.setTheme( newTheme ) );
-watch( () => props.readOnly, ( newValue ) => editor?.updateOptions( { readOnly: newValue } ) );
-
+// ---------------------------------------------------------------------------
+// Lifecycle
+// ---------------------------------------------------------------------------
 const setupResizeObserver = () => {
   if ( !rootContainer.value ) return;
   resizeObserver = new ResizeObserver( () => {
-    requestAnimationFrame( () => editor?.layout() );
+    requestAnimationFrame( () => editorRef.value?.layout() );
   } );
   resizeObserver.observe( rootContainer.value );
 };
@@ -1482,16 +853,19 @@ onMounted( () => {
 } );
 
 onBeforeUnmount( () => {
-  if ( hoverTimeoutId ) clearTimeout( hoverTimeoutId );
-  if ( hideTimeoutId ) clearTimeout( hideTimeoutId );
-  isMouseOverTooltip = false;
   if ( resizeObserver ) resizeObserver.disconnect();
   cleanupSchema();
-  if ( snippetDisposable ) snippetDisposable.dispose();
+  const editor = editorRef.value;
+  const model = modelRef.value;
   if ( editor ) editor.dispose();
   if ( model ) model.dispose();
+  editorRef.value = null;
+  modelRef.value = null;
 } );
 
+// ---------------------------------------------------------------------------
+// Public API
+// ---------------------------------------------------------------------------
 defineExpose( {
   undo,
   redo,
@@ -1501,31 +875,68 @@ defineExpose( {
   expandAll,
   collapseAll,
   goToError,
-  getEditor: () => editor,
-  getModel: () => model,
-  getValue: () => editor?.getValue() || "",
-  setValue: ( value ) => editor?.setValue( valueToString( value ) ),
+  getEditor: () => editorRef.value,
+  getModel: () => modelRef.value,
+  getValue: () => editorRef.value?.getValue() || "",
   validate: updateValidationState,
 } );
 </script>
 
 <style scoped>
+/* ── Light mode (default) ────────────────────────────────────────────── */
 .monaco-json-editor {
+  --mje-bg: #ffffff;
+  --mje-border: #d1d5db;
+  --mje-title-from: #f3f4f6;
+  --mje-title-to: #e5e7eb;
+  --mje-title-text: #374151;
+  --mje-toolbar-bg: #f3f4f6;
+  --mje-footer-bg: #f3f4f6;
+  --mje-footer-text: #6b7280;
+  --mje-error-bg: #fef2f2;
+  --mje-error-border: #fecaca;
+  --mje-error-item-border: #fecaca;
+  --mje-error-item-hover: #fee2e2;
+  --mje-error-path: #dc2626;
+  --mje-error-message: #b91c1c;
+  --mje-snippet-bg: #f1f5f9;
+  --mje-snippet-text: #64748b;
+
   display: flex;
   flex-direction: column;
-  border: 1px solid #374151;
+  border: 1px solid var(--mje-border);
   border-radius: 4px;
   overflow: hidden;
   font-family: system-ui, -apple-system, sans-serif;
   position: relative;
-  background: #1e1e1e;
+  background: var(--mje-bg);
+}
+
+/* ── Dark mode overrides ─────────────────────────────────────────────── */
+.monaco-json-editor.dark {
+  --mje-bg: #1e1e1e;
+  --mje-border: #374151;
+  --mje-title-from: #374151;
+  --mje-title-to: #1f2937;
+  --mje-title-text: #d1d5db;
+  --mje-toolbar-bg: #1f2937;
+  --mje-footer-bg: #1f2937;
+  --mje-footer-text: #9ca3af;
+  --mje-error-bg: #1f1c1c;
+  --mje-error-border: #5c2020;
+  --mje-error-item-border: #3d2020;
+  --mje-error-item-hover: #2d1a1a;
+  --mje-error-path: #f87171;
+  --mje-error-message: #fca5a5;
+  --mje-snippet-bg: #1a1a2e;
+  --mje-snippet-text: #9ca3af;
 }
 
 .monaco-title-bar {
   display: flex;
   align-items: center;
-  background: linear-gradient(to bottom, #374151, #1f2937);
-  border-bottom: 1px solid #374151;
+  background: linear-gradient(to bottom, var(--mje-title-from), var(--mje-title-to));
+  border-bottom: 1px solid var(--mje-border);
   height: 40px;
   padding: 0 12px;
   flex-shrink: 0;
@@ -1534,7 +945,7 @@ defineExpose( {
 .title-text {
   font-weight: 600;
   font-size: 14px;
-  color: #d1d5db;
+  color: var(--mje-title-text);
   text-transform: uppercase;
   letter-spacing: 0.5px;
 }
@@ -1546,8 +957,8 @@ defineExpose( {
 .monaco-toolbar {
   display: flex;
   align-items: center;
-  background-color: #1f2937;
-  border-bottom: 1px solid #374151;
+  background-color: var(--mje-toolbar-bg);
+  border-bottom: 1px solid var(--mje-border);
   height: 40px;
   padding: 0 8px;
   flex-shrink: 0;
@@ -1557,8 +968,8 @@ defineExpose( {
 .monaco-error-panel {
   max-height: 80px;
   overflow-y: auto;
-  background-color: #1f1c1c;
-  border-bottom: 1px solid #5c2020;
+  background-color: var(--mje-error-bg);
+  border-bottom: 1px solid var(--mje-error-border);
   flex-shrink: 0;
 }
 
@@ -1568,21 +979,21 @@ defineExpose( {
   padding: 4px 8px;
   font-size: 12px;
   cursor: pointer;
-  border-bottom: 1px solid #3d2020;
+  border-bottom: 1px solid var(--mje-error-item-border);
 }
 
 .error-item:hover {
-  background-color: #2d1a1a;
+  background-color: var(--mje-error-item-hover);
 }
 
 .error-path {
   font-weight: 600;
-  color: #f87171;
+  color: var(--mje-error-path);
   margin-right: 4px;
 }
 
 .error-message {
-  color: #fca5a5;
+  color: var(--mje-error-message);
 }
 
 .editor-container {
@@ -1591,116 +1002,16 @@ defineExpose( {
   position: relative;
 }
 
-/* Custom hover tooltip */
-.custom-hover-tooltip {
-  position: absolute;
-  z-index: 1000;
-  width: 500px;
-  max-width: 90vw;
-  min-width: 380px;
-  max-height: 310px;
-  background: #1f2937;
-  border: 1px solid #374151;
-  border-radius: 6px;
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
-  font-size: 13px;
-  line-height: 1.5;
-  overflow: hidden;
-  display: flex;
-  flex-direction: column;
-  pointer-events: auto;
-}
-
-/* Invisible padding area to make tooltip easier to reach */
-.custom-hover-tooltip::before {
-  content: "";
-  position: absolute;
-  top: -15px;
-  left: -15px;
-  right: -15px;
-  bottom: -15px;
-  z-index: -1;
-}
-
-.custom-hover-tooltip.is-pinned {
-  border-color: #3b82f6;
-  box-shadow: 0 8px 24px rgba(59, 130, 246, 0.3);
-}
-
-.hover-tooltip-header {
-  display: flex;
-  align-items: center;
-  padding: 6px 8px 6px 12px;
-  background: #374151;
-  border-bottom: 1px solid #4b5563;
-  gap: 4px;
-}
-
-.hover-tooltip-title {
-  font-weight: 600;
-  color: #f3f4f6;
-  font-family: ui-monospace, monospace;
-}
-
-.hover-tooltip-content {
-  padding: 12px;
-  flex: 1;
-  overflow-y: auto;
-  color: #e5e7eb;
-}
-
-.hover-tooltip-content :deep(p) {
-  margin: 0 0 8px;
-}
-
-.hover-tooltip-content :deep(p:last-child) {
-  margin-bottom: 0;
-}
-
-.hover-tooltip-content :deep(strong) {
-  font-weight: 600;
-}
-
-.hover-tooltip-content :deep(a) {
-  color: #60a5fa;
-  text-decoration: none;
-}
-
-.hover-tooltip-content :deep(a:hover) {
-  text-decoration: underline;
-}
-
-.hover-tooltip-content :deep(.code-block) {
-  background: #111827;
-  border: 1px solid #374151;
-  border-radius: 4px;
-  padding: 12px;
-  margin: 8px 0;
-  overflow-x: auto;
-  font-family: ui-monospace, monospace;
-  font-size: 12px;
-  line-height: 1.4;
-  white-space: pre;
-}
-
-.hover-tooltip-content :deep(.inline-code) {
-  background: #374151;
-  border: 1px solid #4b5563;
-  border-radius: 4px;
-  padding: 2px 6px;
-  font-family: ui-monospace, monospace;
-  font-size: 12px;
-}
-
 .monaco-footer {
   display: flex;
   align-items: center;
-  background-color: #1f2937;
-  border-top: 1px solid #374151;
+  background-color: var(--mje-footer-bg);
+  border-top: 1px solid var(--mje-border);
   height: 28px;
   padding: 0 12px;
   flex-shrink: 0;
   font-size: 12px;
-  color: #9ca3af;
+  color: var(--mje-footer-text);
 }
+
 </style>

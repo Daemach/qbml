@@ -27,7 +27,7 @@ component {
 				timeout      : 30,
 				maxRows      : 10000,
 				datasource   : "",
-				returnFormat : "array"  // "array" or "tabular"
+				returnFormat : "array"  // "array", "tabular", "query", or ["struct", "columnKey", ["valueKeys"]]
 			},
 
 			credentials : {

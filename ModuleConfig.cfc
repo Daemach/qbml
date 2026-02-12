@@ -40,8 +40,8 @@ component {
 			.asSingleton();
 
 		binder
-			.map( "Tabular@qbml" )
-			.to( "#moduleMapping#.models.Tabular" )
+			.map( "ReturnFormat@qbml" )
+			.to( "#moduleMapping#.models.ReturnFormat" )
 			.asSingleton();
 	}
 

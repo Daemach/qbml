@@ -1173,7 +1173,7 @@
     },
     "getExecutor": {
       "type": "object",
-      "description": "**get - Return All Results**\n\nExecutes the query and returns all matching rows.\n\n**Simple:**\n```json\n{ \"get\": true }\n```\n\n**With options:**\n```json\n{ \"get\": { \"returnFormat\": \"tabular\" } }\n```\n\n**Return formats:**\n- `\"array\"` (default) - Array of structs\n- `\"tabular\"` - `{ columns: [...], rows: [...] }`\n\n[qb docs](https://qb.ortusbooks.com/query-builder/executing-queries#get)",
+      "description": "**get - Return All Results**\n\nExecutes the query and returns all matching rows.\n\n**Simple:**\n```json\n{ \"get\": true }\n```\n\n**With options:**\n```json\n{ \"get\": { \"returnFormat\": \"tabular\" } }\n```\n\n**Return formats:**\n- `\"array\"` (default) - Array of structs\n- `\"tabular\"` - `{ columns: [...], rows: [...] }`\n- `\"query\"` - Native CFML query object\n- `[\"struct\", columnKey]` - Struct keyed by column value\n- `[\"struct\", columnKey, valueKeys]` - Struct of partial rows or scalars\n\n[qb docs](https://qb.ortusbooks.com/query-builder/executing-queries#get)",
       "properties": {
         "get": {
           "oneOf": [
@@ -1183,10 +1183,8 @@
               "description": "**Options object**",
               "properties": {
                 "returnFormat": {
-                  "type": "string",
-                  "enum": ["array", "tabular"],
-                  "default": "array",
-                  "description": "`array` = [{...}, {...}], `tabular` = {columns, rows}"
+                  "allOf": [{ "$ref": "#/definitions/returnFormatOption" }],
+                  "default": "array"
                 },
                 "autoSort": { "type": "boolean", "default": false }
               }
@@ -1294,7 +1292,7 @@
     },
     "paginateExecutor": {
       "type": "object",
-      "description": "**paginate - Return Paginated Results**\n\nExecutes query with pagination and returns results with metadata.\n\n**Basic pagination:**\n```json\n{ \"paginate\": { \"page\": 1, \"maxRows\": 25 } }\n```\n\n**With tabular format:**\n```json\n{ \"paginate\": { \"page\": 1, \"maxRows\": 100, \"returnFormat\": \"tabular\" } }\n```\n\n**Response includes:**\n- `results` - The data rows\n- `pagination` - `{ page, maxRows, totalRecords, totalPages }`\n\n**simplePaginate** - Faster, but no total count:\n```json\n{ \"simplePaginate\": { \"page\": 1, \"maxRows\": 25 } }\n```\n\n[qb docs](https://qb.ortusbooks.com/query-builder/executing-queries#paginate)",
+      "description": "**paginate - Return Paginated Results**\n\nExecutes query with pagination and returns results with metadata.\n\n**Basic pagination:**\n```json\n{ \"paginate\": { \"page\": 1, \"maxRows\": 25 } }\n```\n\n**With tabular format:**\n```json\n{ \"paginate\": { \"page\": 1, \"maxRows\": 100, \"returnFormat\": \"tabular\" } }\n```\n\n**With struct format:**\n```json\n{ \"paginate\": { \"page\": 1, \"maxRows\": 100, \"returnFormat\": [\"struct\", \"id\"] } }\n```\n\n**Response includes:**\n- `results` - The data rows (format depends on returnFormat)\n- `pagination` - `{ page, maxRows, totalRecords, totalPages }`\n\n**simplePaginate** - Faster, but no total count:\n```json\n{ \"simplePaginate\": { \"page\": 1, \"maxRows\": 25 } }\n```\n\n[qb docs](https://qb.ortusbooks.com/query-builder/executing-queries#paginate)",
       "properties": {
         "paginate": {
           "type": "object",
@@ -1303,7 +1301,7 @@
             "page": { "type": "integer", "minimum": 1, "default": 1, "description": "Current page number (1-based)" },
             "maxRows": { "type": "integer", "minimum": 1, "default": 25, "description": "Results per page" },
             "size": { "type": "integer", "minimum": 1, "description": "Alias for maxRows" },
-            "returnFormat": { "type": "string", "enum": ["array", "tabular"], "description": "`array` or `tabular` format" },
+            "returnFormat": { "allOf": [{ "$ref": "#/definitions/returnFormatOption" }] },
             "autoSort": { "type": "boolean", "default": false }
           }
         },
@@ -1314,7 +1312,7 @@
             "page": { "type": "integer", "minimum": 1, "default": 1, "description": "Current page number" },
             "maxRows": { "type": "integer", "minimum": 1, "default": 25, "description": "Results per page" },
             "size": { "type": "integer", "minimum": 1, "description": "Alias for maxRows" },
-            "returnFormat": { "type": "string", "enum": ["array", "tabular"] },
+            "returnFormat": { "allOf": [{ "$ref": "#/definitions/returnFormatOption" }] },
             "autoSort": { "type": "boolean" }
           }
         },
@@ -1344,6 +1342,39 @@
       },
       "required": ["dump"],
       "additionalProperties": false
+    },
+    "returnFormatOption": {
+      "oneOf": [
+        {
+          "type": "string",
+          "enum": ["array", "tabular", "query"],
+          "description": "Simple format: array (default), tabular, or query"
+        },
+        {
+          "type": "array",
+          "description": "Tuple: [format] — equivalent to the string form",
+          "minItems": 1,
+          "maxItems": 1,
+          "items": [{ "type": "string", "enum": ["array", "tabular", "query"] }],
+          "additionalItems": false
+        },
+        {
+          "type": "array",
+          "description": "Struct format: [\"struct\", columnKey] or [\"struct\", columnKey, valueKeys]",
+          "minItems": 2,
+          "maxItems": 3,
+          "items": [
+            { "const": "struct" },
+            { "type": "string", "description": "Column whose values become struct keys" },
+            { "type": "array", "items": { "type": "string" }, "description": "Columns to include in values (omit for full row)" }
+          ],
+          "additionalItems": false
+        }
+      ],
+      "defaultSnippets": [
+        { "label": "struct by column", "bodyText": "[\"struct\", \"${1:id}\"]" },
+        { "label": "struct with value keys", "bodyText": "[\"struct\", \"${1:id}\", [\"${2:name}\"]]" }
+      ]
     },
     "subquery": {
       "type": "array",

@@ -1,8 +1,8 @@
 <template>
   <q-page class="editor-page">
-    <div class="editor-container">
+    <div ref="editorContainer" class="editor-container">
       <MonacoJsonEditor
-        v-model="queryData"
+        v-model="queryString"
         title="QBML Query Editor"
         :schema="qbmlEditorProps.schema"
         :schema-uri="qbmlEditorProps.schemaUri"
@@ -39,16 +39,31 @@
             style="display: none"
             @change="loadFile"
           />
+          <q-separator vertical class="q-mx-xs" />
+          <q-btn
+            flat
+            dense
+            icon="menu_book"
+            title="QBML Documentation"
+            @click="showDocs = true"
+          />
         </template>
       </MonacoJsonEditor>
     </div>
+    <QbmlDocsDialog
+      v-model="showDocs"
+      :github-repo="qbmlEditorProps.githubRepo"
+      :local-version="qbmlEditorProps.version"
+    />
   </q-page>
 </template>
 
 <script setup>
-import { ref, onMounted } from "vue";
+import { ref, onMounted, onUnmounted } from "vue";
 import { useQuasar } from "quasar";
+import stringify from "json-stringify-pretty-compact";
 import MonacoJsonEditor from "src/components/MonacoJsonEditor.vue";
+import QbmlDocsDialog from "src/components/QbmlDocsDialog.vue";
 import { useJsonSchema } from "src/composables/useJsonSchema";
 import { schemaReady } from "src/boot/monaco";
 
@@ -56,18 +71,37 @@ const $q = useQuasar();
 
 const { getEditorProps } = useJsonSchema();
 const qbmlEditorProps = ref( {} );
+const editorContainer = ref( null );
+let resizeObserver = null;
 
-// Wait for schema to be loaded before getting editor props
+// Track viewport height so editor bottom follows viewport bottom
+// (handles browser dev tools open/close, window resize, etc.)
+const updateContainerHeight = () => {
+  const el = editorContainer.value;
+  if ( !el ) return;
+  const top = el.getBoundingClientRect().top;
+  el.style.height = `${window.innerHeight - top}px`;
+};
+
 onMounted( async () => {
+  // Viewport tracking via ResizeObserver on <html>
+  resizeObserver = new ResizeObserver( updateContainerHeight );
+  resizeObserver.observe( document.documentElement );
+  updateContainerHeight();
+
   await schemaReady;
   qbmlEditorProps.value = getEditorProps( "qbml" );
-  console.log( "[IndexPage] Editor props loaded:", qbmlEditorProps.value );
+} );
+
+onUnmounted( () => {
+  resizeObserver?.disconnect();
 } );
 
 const fileInput = ref( null );
+const showDocs = ref( false );
 
-// Sample QBML query
-const queryData = ref( [
+// Sample QBML query (string for v-model)
+const sampleQuery = [
   { "from": "users" },
   { "select": [ "id", "name", "email", "created_at" ] },
   {
@@ -80,7 +114,8 @@ const queryData = ref( [
   },
   { "orderByDesc": "created_at" },
   { "paginate": { "page": 1, "maxRows": 25 } }
-] );
+];
+const queryString = ref( stringify( sampleQuery, { indent: 2, maxLength: 80 } ) );
 
 const onValidation = ( result ) => {
   if ( !result.valid && result.errors.length > 0 ) {
@@ -90,8 +125,7 @@ const onValidation = ( result ) => {
 
 const copyToClipboard = async () => {
   try {
-    const json = JSON.stringify( queryData.value, null, 2 );
-    await navigator.clipboard.writeText( json );
+    await navigator.clipboard.writeText( queryString.value );
     $q.notify( {
       type: "positive",
       message: "Copied to clipboard",
@@ -107,8 +141,7 @@ const copyToClipboard = async () => {
 };
 
 const downloadJson = () => {
-  const json = JSON.stringify( queryData.value, null, 2 );
-  const blob = new Blob( [ json ], { type: "application/json" } );
+  const blob = new Blob( [ queryString.value ], { type: "application/json" } );
   const url = URL.createObjectURL( blob );
   const a = document.createElement( "a" );
   a.href = url;
@@ -133,8 +166,9 @@ const loadFile = ( event ) => {
   const reader = new FileReader();
   reader.onload = ( e ) => {
     try {
-      const content = JSON.parse( e.target.result );
-      queryData.value = content;
+      // Validate it's valid JSON, then pretty-print it
+      const parsed = JSON.parse( e.target.result );
+      queryString.value = stringify( parsed, { indent: 2, maxLength: 80 } );
       $q.notify( {
         type: "positive",
         message: `Loaded ${file.name}`,
@@ -161,10 +195,10 @@ const loadFile = ( event ) => {
 }
 
 .editor-container {
-  flex: 1;
   display: flex;
   flex-direction: column;
   padding: 16px;
   min-height: 0;
+  overflow: hidden;
 }
 </style>

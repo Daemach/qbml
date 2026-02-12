@@ -1,71 +1,49 @@
-# QBML Editor
+# MonacoJsonEditor
 
-A Monaco-based JSON editor component for editing QBML (Query Builder Markup Language) queries. Built with Vue 3 and Quasar Framework.
+A feature-rich JSON editor component for Vue 3 + Quasar, powered by Monaco Editor.
+Schema validation, autocomplete, snippets, and rich hover tooltips.
 
-## Quick Start (Dev Mode)
+## Setup
+
+### 1. Install dependencies
 
 ```bash
-# Install dependencies
-npm install
-
-# Start dev server
-npm run dev
+npm install monaco-editor json-stringify-pretty-compact
 ```
 
-The editor will be available at `http://localhost:9000`
+### 2. Copy files into your Quasar project
 
-## Integration into Your Application
-
-The main component is designed to be copied into your own Vue/Quasar application.
-
-### Required Files
-
-Copy these files to your project:
-
-1. **Component**: `src/components/MonacoJsonEditor.vue`
-2. **Composable**: `src/composables/useJsonSchema.js`
-3. **Boot file**: `src/boot/monaco.js`
-4. **Schema**: `public/qbml.schema.json`
-
-### Dependencies
-
-Add to your `package.json`:
-
-```json
-{
-  "dependencies": {
-    "monaco-editor": "^0.52.2"
-  }
-}
+```text
+your-project/
+  src/boot/monaco.js                  # Worker config + schema init
+  src/composables/useJsonSchema.js    # Schema registry composable
+  src/components/MonacoJsonEditor.vue
+  public/qbml.schema.json            # Or your own JSON Schema
 ```
 
-### Quasar Configuration
+### 3. Register the boot file
 
-Register the boot file in `quasar.config.js`:
+In `quasar.config.js`:
 
 ```js
-boot: [
-  'monaco'
-],
+boot: ['monaco']
 ```
 
-### Basic Usage
+## Usage
 
 ```vue
 <template>
   <MonacoJsonEditor
-    v-model="queryData"
-    title="QBML Query Editor"
-    :schema="editorProps.schema"
-    :schema-uri="editorProps.schemaUri"
-    :schema-name="editorProps.schemaName"
-    :snippets="editorProps.snippets"
-    @validation="onValidation"
+    v-model="queryString"
+    v-bind="editorProps"
+    title="QBML Query"
+    @validation="({ valid, errors }) => console.log(valid, errors)"
   />
 </template>
 
 <script setup>
 import { ref, onMounted } from "vue";
+import stringify from "json-stringify-pretty-compact";
 import MonacoJsonEditor from "src/components/MonacoJsonEditor.vue";
 import { useJsonSchema } from "src/composables/useJsonSchema";
 import { schemaReady } from "src/boot/monaco";
@@ -78,96 +56,65 @@ onMounted(async () => {
   editorProps.value = getEditorProps("qbml");
 });
 
-const queryData = ref([
-  { "from": "users" },
-  { "select": ["*"] },
-  { "get": true }
-]);
-
-const onValidation = (result) => {
-  console.log("Valid:", result.valid, "Errors:", result.errors);
-};
+const queryString = ref(stringify([
+  { from: "users" },
+  { select: ["*"] },
+  { get: true }
+], { indent: 2 }));
 </script>
 ```
 
-### Component Props
+## API
+
+### Props
 
 | Prop | Type | Default | Description |
-|------|------|---------|-------------|
-| `modelValue` | String/Object/Array | `""` | The JSON data (v-model) |
-| `title` | String | `""` | Title bar text |
-| `schema` | Object | `null` | JSON Schema for validation |
-| `schemaUri` | String | `"http://json-schema.org/draft-07/schema#"` | Schema URI |
-| `schemaName` | String | `""` | Display name for schema badge |
-| `snippets` | Array | `[]` | Code snippets for dropdown |
-| `height` | String | `"100%"` | Container height |
-| `width` | String | `"100%"` | Container width |
-| `fillHeight` | Boolean | `true` | Fill parent height |
-| `readOnly` | Boolean | `false` | Disable editing |
-| `showToolbar` | Boolean | `true` | Show toolbar |
-| `showFooter` | Boolean | `true` | Show status bar |
-| `theme` | String | `"vs-dark"` | Monaco theme |
-| `minimap` | Boolean | `false` | Show minimap |
-| `lineNumbers` | Boolean | `true` | Show line numbers |
-| `wordWrap` | String | `"on"` | Word wrap mode |
-| `tabSize` | Number | `2` | Tab size |
-| `fontSize` | Number | `14` | Font size |
+| ---- | ---- | ------- | ----------- |
+| `modelValue` | `String` | `"[\n\n]"` | JSON string (v-model) |
+| `title` | `String` | `""` | Title bar text |
+| `schema` | `Object` | `null` | JSON Schema for validation/autocomplete |
+| `schemaUri` | `String` | draft-07 URI | Schema identifier URI |
+| `schemaName` | `String` | `""` | Badge label in toolbar |
+| `snippets` | `Array` | `[]` | Code snippets for toolbar dropdowns |
+| `height` | `String` | `"100%"` | Container height |
+| `width` | `String` | `"100%"` | Container width |
+| `fillHeight` | `Boolean` | `true` | Fill parent height |
+| `readOnly` | `Boolean` | `false` | Disable editing |
+| `showToolbar` | `Boolean` | `true` | Show/hide toolbar |
+| `showFooter` | `Boolean` | `true` | Show/hide status bar |
+| `theme` | `String` | `"vs-dark"` | Monaco theme name |
+| `minimap` | `Boolean` | `false` | Show code minimap |
+| `lineNumbers` | `Boolean` | `true` | Show line numbers |
+| `wordWrap` | `String` | `"on"` | Word wrap mode |
+| `tabSize` | `Number` | `2` | Indentation size |
+| `fontSize` | `Number` | `14` | Editor font size |
 
 ### Events
 
 | Event | Payload | Description |
-|-------|---------|-------------|
-| `update:modelValue` | Parsed JSON | Emitted on content change |
-| `validation` | `{ valid, errors }` | Emitted on validation change |
-| `ready` | `{ editor, model }` | Emitted when editor is ready |
+| ----- | ------- | ----------- |
+| `update:modelValue` | `String` | Raw editor content string |
+| `validation` | `{ valid, errors }` | Fires on validation state change |
+| `ready` | `{ editor, model }` | Fires when Monaco is initialized |
 
 ### Exposed Methods
 
-```js
-const editorRef = ref(null);
+Access via template ref: `<MonacoJsonEditor ref="editorRef" />`
 
-// Access methods via ref
-editorRef.value.undo();
-editorRef.value.redo();
-editorRef.value.formatDocument();
-editorRef.value.compactJson();
-editorRef.value.sortKeys();
-editorRef.value.expandAll();
-editorRef.value.collapseAll();
-editorRef.value.getValue();
-editorRef.value.setValue(data);
-editorRef.value.validate();
-editorRef.value.getEditor(); // Monaco editor instance
-editorRef.value.getModel();  // Monaco model instance
-```
+| Method | Description |
+| ------ | ----------- |
+| `undo()` / `redo()` | History navigation |
+| `formatDocument()` | Pretty-print JSON |
+| `compactJson()` | Minify JSON |
+| `sortKeys()` | Sort object keys alphabetically |
+| `expandAll()` / `collapseAll()` | Code folding |
+| `goToError(error)` | Jump to a validation error |
+| `getValue()` | Get current editor content string |
+| `validate()` | Trigger validation manually |
+| `getEditor()` / `getModel()` | Access Monaco instances |
 
-### Title Bar Actions Slot
+### Slots
 
-Add custom buttons to the title bar:
-
-```vue
-<MonacoJsonEditor v-model="data">
-  <template #title-actions>
-    <q-btn flat dense icon="save" @click="save" />
-  </template>
-</MonacoJsonEditor>
-```
-
-## Building for Production
-
-```bash
-npm run build
-```
-
-Output will be in `dist/spa/`.
-
-## Features
-
-- JSON Schema validation with inline error highlighting
-- QBML-specific code snippets
-- Hover tooltips with schema documentation
-- Format/compact/sort tools
-- Undo/redo support
-- Code folding
-- Dark theme
-- Responsive design
+| Slot              | Description                                                |
+| ----------------- | ---------------------------------------------------------- |
+| `#title-actions`  | Inject buttons into the title bar (requires `title` prop)  |

@@ -23,7 +23,9 @@ component extends="testbox.system.BaseSpec" {
 	}
 
 	function usesMySQLGrammar() {
-		// Use MySQL grammar in CI (MySQL service container) or BoxLang
+		if ( structKeyExists( server, "qbmlTestGrammar" ) ) {
+			return server.qbmlTestGrammar == "MySQLGrammar";
+		}
 		return isCI() || isBoxLang();
 	}
 
@@ -71,7 +73,7 @@ component extends="testbox.system.BaseSpec" {
 		qbml.setQb( qbProvider );
 		qbml.setSecurity( new qbml.models.QBMLSecurity( settings = testSettings ) );
 		qbml.setConditions( new qbml.models.QBMLConditions() );
-		qbml.setTabular( new qbml.models.Tabular() );
+		qbml.setFormatter( new qbml.models.ReturnFormat() );
 
 		return qbml;
 	}

@@ -13,8 +13,16 @@
         <q-btn
           flat
           dense
+          :icon="$q.dark.isActive ? 'light_mode' : 'dark_mode'"
+          :title="$q.dark.isActive ? 'Switch to light mode' : 'Switch to dark mode'"
+          @click="$q.dark.toggle()"
+        />
+
+        <q-btn
+          flat
+          dense
           icon="help_outline"
-          title="QBML Documentation"
+          title="qb Documentation"
           href="https://qb.ortusbooks.com/"
           target="_blank"
         />
@@ -24,7 +32,7 @@
           dense
           icon="code"
           title="GitHub"
-          href="https://github.com/coldbox-modules/qb"
+          href="https://github.com/Daemach/qbml"
           target="_blank"
         />
       </q-toolbar>
@@ -43,5 +51,6 @@
 <style>
 html, body, #q-app {
   height: 100%;
+  overflow: hidden;
 }
 </style>

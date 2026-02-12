@@ -10,7 +10,7 @@ component accessors="true" singleton {
 	property name="qb"         inject="provider:QueryBuilder@qb";
 	property name="security"   inject="QBMLSecurity@qbml";
 	property name="conditions" inject="QBMLConditions@qbml";
-	property name="tabular"    inject="Tabular@qbml";
+	property name="formatter"  inject="ReturnFormat@qbml";
 
 	// Settings
 	property name="settings" type="struct";
@@ -210,7 +210,7 @@ component accessors="true" singleton {
 	 * @queryDef The QBML query array
 	 * @options Execution options:
 	 *          - params: struct of parameter values for $param references and param-based when conditions
-	 *          - returnFormat: "array" (default) or "tabular" - overrides config and query definition
+	 *          - returnFormat: "array" (default), "tabular", "query", or ["struct", columnKey, valueKeys?] - overrides config and query definition
 	 *          - datasource: string - database datasource to use
 	 *          - timeout: number - query timeout in seconds
 	 * @return any Query results (format depends on executor and returnFormat option)
@@ -898,17 +898,19 @@ component accessors="true" singleton {
 			returnFormat = arguments.passedOptions.returnFormat;
 		}
 
+		// Parse return format (handles both string "array" and tuple ["struct", "id", ["name"]])
+		var rf = variables.formatter.parse( returnFormat );
+
 		// Execute based on action
 		var args = arguments.executor.args;
 
 		switch ( arguments.executor.action ) {
 			case "get":
-				var results = arguments.q.get( options = opts );
-				// Convert to tabular format if requested
-				if ( returnFormat == "tabular" ) {
-					return variables.tabular.fromArray( results );
+				// Optimization: let qb return native query for formats that benefit from it
+				if ( variables.formatter.prefersQueryInput( rf ) ) {
+					arguments.q.setReturnFormat( "query" );
 				}
-				return results;
+				return variables.formatter.transform( arguments.q.get( options = opts ), rf );
 
 			case "first":
 				return arguments.q.first( options = opts );
@@ -951,24 +953,24 @@ component accessors="true" singleton {
 				return arguments.q.exists( options = opts );
 
 			case "paginate":
-				var page           = arguments.executor.page ?: 1;
-				var perPage        = arguments.executor.maxRows ?: arguments.executor.size ?: 25;
-				var paginateResult = arguments.q.paginate( page = page, maxRows = perPage, options = opts );
-				// Convert to tabular format if requested
-				if ( returnFormat == "tabular" ) {
-					return variables.tabular.fromPagination( paginateResult, "results" );
+				var page    = arguments.executor.page ?: 1;
+				var perPage = arguments.executor.maxRows ?: arguments.executor.size ?: 25;
+				// Optimization: let qb return native query for formats that benefit
+				if ( variables.formatter.prefersQueryInput( rf ) ) {
+					arguments.q.setReturnFormat( "query" );
 				}
-				return paginateResult;
+				return variables.formatter.transformPaginated(
+					arguments.q.paginate( page = page, maxRows = perPage, options = opts ), rf
+				);
 
 			case "simplePaginate":
-				var page                 = arguments.executor.page ?: 1;
-				var perPage              = arguments.executor.maxRows ?: arguments.executor.size ?: 25;
-				var simplePaginateResult = arguments.q.simplePaginate( page = page, maxRows = perPage, options = opts );
-				// Convert to tabular format if requested
-				if ( returnFormat == "tabular" ) {
-					return variables.tabular.fromPagination( simplePaginateResult, "results" );
-				}
-				return simplePaginateResult;
+				var page    = arguments.executor.page ?: 1;
+				var perPage = arguments.executor.maxRows ?: arguments.executor.size ?: 25;
+				// Note: cbpaginator's generateSimpleWithResults types results as array,
+				// so we can't set qb to query format. ReturnFormat handles post-conversion.
+				return variables.formatter.transformPaginated(
+					arguments.q.simplePaginate( page = page, maxRows = perPage, options = opts ), rf
+				);
 
 			case "toSQL":
 				return arguments.q.toSQL();
@@ -1546,5 +1548,7 @@ component accessors="true" singleton {
 		}
 		return false;
 	}
+	// ==================== RETURN FORMAT HELPERS ====================
+
 	// "I am the way, and the truth, and the life; no one comes to the Father, but by me (JESUS)" Jn 14:1-12
 }

@@ -50,4 +50,7 @@ const schemaReady = fetch( "/qbml.schema.json" )
     return null;
   } );
 
+// Expose for dev tools / testing
+window.monaco = monaco;
+
 export { monaco, schemaReady };
