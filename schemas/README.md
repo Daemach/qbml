@@ -273,6 +273,165 @@ Supported markdown:
 - `[text](url)` links
 - Line breaks with `\n`
 
+## ReturnFormat Service (CFML)
+
+The ReturnFormat service handles server-side result transformation:
+
+```cfml
+// Inject
+property name="returnFormat" inject="ReturnFormat@qbml";
+
+// Convert array of structs to tabular format
+var result = returnFormat.fromArray( data );
+
+// Convert query object to tabular format (accurate DB types)
+var result = returnFormat.fromQuery( queryObject );
+
+// Transform any results using a parsed format spec
+var rf     = returnFormat.parse( "tabular" );
+var result = returnFormat.transform( data, rf );
+
+// Transform pagination result
+var result = returnFormat.transformPaginated( paginationResult, rf, "results" );
+
+// Decompress tabular back to array of structs
+var data = returnFormat.toArray( tabularData );
+```
+
+## Browser-Side Detabulator (JavaScript/TypeScript)
+
+For frontend applications, QBML provides browser-side utilities to convert tabular format back to arrays. This is useful when your API returns tabular format for bandwidth efficiency, but your UI components expect arrays of objects.
+
+**Installation:** Copy `schemas/tabular.js` or `schemas/tabular.ts` to your frontend project.
+
+**TypeScript Usage:**
+
+```typescript
+import { detabulate, detabulatePagination, isTabular } from './tabular';
+
+// API returns tabular format
+const response = await fetch('/api/users');
+const data = await response.json();
+
+// Check format and convert if needed
+if (isTabular(data)) {
+    const users = detabulate(data);
+    // users = [{ id: 1, name: "Alice" }, { id: 2, name: "Bob" }]
+}
+
+// For pagination results
+const paginatedResponse = await fetch('/api/users?page=1');
+const paginatedData = await paginatedResponse.json();
+
+if (isTabularPagination(paginatedData)) {
+    const result = detabulatePagination(paginatedData);
+    // result.pagination = { page: 1, maxRows: 25, totalRecords: 100, totalPages: 4 }
+    // result.results = [{ id: 1, name: "Alice" }, ...]
+}
+```
+
+**JavaScript Usage:**
+
+```javascript
+import { detabulate, detabulatePagination } from './tabular.js';
+
+// Convert tabular to array
+const tabular = {
+    columns: [
+        { name: "id", type: "integer" },
+        { name: "name", type: "varchar" }
+    ],
+    rows: [[1, "Alice"], [2, "Bob"]]
+};
+
+const array = detabulate(tabular);
+// [{ id: 1, name: "Alice" }, { id: 2, name: "Bob" }]
+```
+
+### Available Functions
+
+| Function | Description |
+|----------|-------------|
+| `detabulate(tabular)` | Convert tabular format to array of objects |
+| `detabulatePagination(result)` | Convert pagination result with tabular data |
+| `tabulate(array)` | Convert array of objects to tabular format |
+| `tabulatePagination(result)` | Convert pagination result to tabular format |
+| `isTabular(data)` | Check if data is in tabular format |
+| `isTabularPagination(data)` | Check if pagination result has tabular data |
+| `getColumnNames(tabular)` | Get array of column names |
+| `getColumnTypes(tabular)` | Get map of column names to types |
+| `getRow(tabular, index)` | Get single row as object |
+| `getColumn(tabular, name)` | Get column values as array |
+| `toQTableColumns(tabular, options)` | Generate Quasar QTable column definitions |
+| `toQTable(tabular, options)` | Generate QTable-ready { columns, rows } |
+| `toQTablePagination(result, options)` | Generate QTable structure with pagination |
+
+### Quasar QTable Integration
+
+The `toQTable*` functions generate column definitions with intelligent formatting:
+- **Alignment**: Numbers and dates align right, strings align left, booleans center
+- **Formatting**: Numbers get thousand separators, dates use locale-aware formatting
+- **Sorting**: Type-appropriate sort functions for proper numeric/date sorting
+- **Labels**: Column names converted from `snake_case`/`camelCase` to "Title Case"
+
+```javascript
+import { toQTable, toQTablePagination } from './tabular.js';
+
+// Simple usage - generates columns and rows
+const tabular = await fetchData(); // { columns: [...], rows: [...] }
+const { columns, rows } = toQTable(tabular);
+
+// With options
+const { columns, rows } = toQTable(tabular, {
+    dateFormat: 'short',           // 'short', 'medium', 'long', 'iso', or custom function
+    locale: 'en-US',               // Locale for formatting
+    decimalPlaces: 2,              // Decimal precision
+    useThousandSeparator: true,    // 1000 -> "1,000"
+    sortable: true,                // Enable column sorting
+    columnOverrides: {             // Per-column customization
+        status: { align: 'center', label: 'Status' }
+    }
+});
+
+// For paginated results
+const result = await fetchPaginatedData();
+const { columns, rows, pagination } = toQTablePagination(result);
+```
+
+```html
+<q-table
+    :columns="columns"
+    :rows="rows"
+    :pagination="pagination"
+    row-key="id"
+/>
+```
+
+### TypeScript Type Definitions
+
+```typescript
+interface TabularColumn {
+    name: string;
+    type: 'integer' | 'bigint' | 'decimal' | 'varchar' | 'boolean' |
+          'datetime' | 'uuid' | 'object' | 'array' | 'binary' | 'unknown';
+}
+
+interface TabularData<T = Record<string, unknown>> {
+    columns: TabularColumn[];
+    rows: unknown[][];
+}
+
+interface TabularPaginationResult<T = Record<string, unknown>> {
+    pagination: {
+        page: number;
+        maxRows: number;
+        totalRecords: number;
+        totalPages: number;
+    };
+    results: TabularData<T>;
+}
+```
+
 ## Alternative Integrations
 
 ### TypeScript Types Only

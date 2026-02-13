@@ -1,48 +1,53 @@
 # QBML - Query Builder Markup Language
 
-A ColdBox module that translates JSON query definitions into [QueryBuilder](https://qb.ortusbooks.com/) queries. Store queries in databases, build them dynamically from client data, and execute with security controls.
+Turn JSON into secure, multi-platform SQL. Store queries in databases, hydrate them with parameterized data, and execute with table and action allowlists and injection protection. Perfect for report builders, dynamic dashboards, and user-defined data views.
 
 [![ForgeBox](https://forgebox.io/api/v1/entry/qbml/badges/version)](https://forgebox.io/view/qbml)
 [![CI](https://github.com/Daemach/qbml/actions/workflows/ci.yml/badge.svg)](https://github.com/Daemach/qbml/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-## Features
+Built on [QueryBuilder (qb)](https://qb.ortusbooks.com/) | [Editor Demo](qbml-editor-quasar/) | [Schema & Types](schemas/)
 
-- **JSON-based Query Language** - Define queries as portable JSON structures
-- **Full QB Support** - All (select) QB methods available
-- **Security First** - Table allowlist/blocklist, SQL injection protection
-- **Parameterization** - Inject runtime values with `$param` references
-- **Conditional Logic** - Skip or include clauses with `when` conditions
-- **Tabular Format** - Compact result format with type metadata
-- **CTEs & Subqueries** - Full support for complex query patterns
+## Contents
 
-## Requirements
+- [30-Second Install](#30-second-install)
+- [Features at a Glance](#features-at-a-glance)
+- [Configuration](#configuration)
+- [Return Formats](#return-formats) — Array, Tabular, Query, Struct
+- [QBML Schema Reference](#qbml-schema-reference) — Selects, Wheres, Joins, CTEs, Unions, Subqueries
+- [Lock Methods](#lock-methods)
+- [Object-Form Arguments](#object-form-arguments)
+- [Parameters & Dynamic Queries](#parameters--dynamic-queries)
+- [Conditional Actions](#conditional-actions)
+- [Executors](#executors)
+- [Security](#security)
+- [QBML Editor](#qbml-editor) — Monaco + Vue component
+- [API Reference](#api-reference)
+- [Examples](#examples)
+- [Testing & Contributing](#testing--contributing)
+- [Credits](#credits)
 
-- Lucee 5.3+ or Adobe ColdFusion 2021+
-- ColdBox 6+
-- qb 13+
+## 30-Second Install
 
-## Installation
-
-### ForgeBox (Recommended)
+**Requirements:** Lucee 5.3+ or Adobe ColdFusion 2021+, ColdBox 6+, qb 13+
 
 ```bash
 box install qbml
 ```
 
-### Manual Installation
-
-1. Download or clone this repository
-2. Place in your `modules` directory
-3. Run `box install` to install dependencies
-
-## Quick Start
+Point to a config file in `config/ColdBox.cfc` (or pass `{}` for zero-config defaults):
 
 ```cfml
-// Inject the service
+moduleSettings = {
+    qbml : { configPath : "config.qbml" }
+};
+```
+
+Inject and run your first query:
+
+```cfml
 property name="qbml" inject="QBML@qbml";
 
-// Execute a simple query
 var users = qbml.execute([
     { "from": "users" },
     { "select": ["id", "name", "email"] },
@@ -50,24 +55,30 @@ var users = qbml.execute([
     { "orderBy": ["name", "asc"] },
     { "get": true }
 ]);
-
-// With pagination
-var paged = qbml.execute([
-    { "from": "orders" },
-    { "select": ["id", "total", "created_at"] },
-    { "paginate": { "page": 1, "maxRows": 25 } }
-]);
-
-// Get SQL without executing
-var sql = qbml.toSQL([
-    { "from": "users" },
-    { "where": ["role", "admin"] }
-]);
 ```
+
+That's it. QBML defaults to no restrictions and `"array"` return format. See [Configuration](#configuration) for security controls and [Return Formats](#return-formats) for output options.
+
+[Back to top](#qbml---query-builder-markup-language)
+
+## Features at a Glance
+
+| Category | Capabilities |
+|----------|-------------|
+| **Query Language** | 49 base actions covering all QB select methods, plus object-form arguments |
+| **Return Formats** | **Array** (default), **Tabular** (compact + types), **Query** (native CFML), **Struct** (keyed lookups) |
+| **Parameters** | `$param` references, string template interpolation (`$name$`), conditional clauses |
+| **Security** | Table/action/executor allowlist & blocklist, SQL injection protection, input validation |
+| **Advanced SQL** | CTEs, recursive CTEs, subqueries, unions, 7 join types, lock methods |
+| **Configuration** | Config file with environment overrides, table aliases, query defaults |
+| **Editor** | Monaco-powered Vue component — autocomplete, 50+ snippets, validation, hover docs |
+| **Frontend** | Browser detabulator (JS/TS), Quasar QTable integration, TypeScript types |
+
+[Back to top](#qbml---query-builder-markup-language)
 
 ## Configuration
 
-QBML supports two configuration methods: a dedicated config file (recommended) or inline moduleSettings.
+QBML supports a dedicated config file (recommended) or inline `moduleSettings` using the same keys.
 
 ### Config File (Recommended)
 
@@ -145,24 +156,6 @@ moduleSettings = {
 };
 ```
 
-### Inline Configuration
-
-Alternatively, configure directly in `config/ColdBox.cfc`:
-
-```cfml
-moduleSettings = {
-    qbml : {
-        tables    : { mode : "none", list : [] },
-        actions   : { mode : "none", list : [] },
-        executors : { mode : "none", list : [] },
-        aliases   : {},
-        defaults  : { timeout : 30, maxRows : 10000, datasource : "", returnFormat : "array" }, // "array", "tabular", "query", or ["struct", "columnKey"]
-        credentials : { username : "", password : "" },
-        debug     : false
-    }
-};
-```
-
 ### Access Control Modes
 
 Each access control setting (tables, actions, executors) uses a `{ mode, list }` structure:
@@ -181,14 +174,148 @@ For development or trusted environments with no restrictions:
 
 ```cfml
 moduleSettings = {
-    qbml : { configPath : "config.qbml" }
-};
-
-// Or inline (defaults to mode: "none" for all)
-moduleSettings = {
     qbml : {}
 };
 ```
+
+[Back to top](#qbml---query-builder-markup-language)
+
+## Return Formats
+
+QBML supports four return formats for `get`, `paginate`, and `simplePaginate`:
+
+| Format | Syntax | Returns | Best For |
+|--------|--------|---------|----------|
+| **Array** | `"array"` (default) | `[{ id: 1, name: "Alice" }, ...]` | General use |
+| **Tabular** | `"tabular"` | `{ columns, rows }` with type metadata | API bandwidth, QTable |
+| **Query** | `"query"` | Native CFML query object | Legacy integration |
+| **Struct** | `["struct", key]` | `{ "1": { ... }, "2": { ... } }` | Lookups, translation maps |
+
+> All formats accept tuple syntax: `["array"]` is equivalent to `"array"`.
+> Struct **requires** tuple syntax since it needs a columnKey parameter.
+
+**Priority Order:** Execute options > Query definition > Config defaults
+
+**Set the default in config:**
+
+```cfml
+defaults : {
+    returnFormat : "tabular"           // All queries return tabular by default
+    // returnFormat : ["struct", "id"] // All queries return struct keyed by id
+}
+```
+
+**Override per-query:**
+
+```json
+{ "get": { "returnFormat": "tabular" } }
+{ "get": { "returnFormat": ["struct", "id"] } }
+{ "paginate": { "page": 1, "maxRows": 25, "returnFormat": ["struct", "orderId"] } }
+```
+
+**Override at runtime:**
+
+```cfml
+qbml.execute( query, { returnFormat : "query" } );
+qbml.execute( query, { returnFormat : [ "struct", "id" ] } );
+```
+
+### Struct Format
+
+Returns results as a struct keyed by a column value — ideal for translation maps,
+lookup tables, and master-detail relationships where you need fast key-based access.
+
+**Full rows keyed by id:**
+
+```json
+{ "get": { "returnFormat": ["struct", "id"] } }
+```
+
+```json
+{
+  "1": { "id": 1, "username": "alice", "email": "alice@example.com" },
+  "2": { "id": 2, "username": "bob", "email": "bob@example.com" }
+}
+```
+
+**Translation map** — single valueKey returns scalar values:
+
+```json
+{ "get": { "returnFormat": ["struct", "code", ["label"]] } }
+```
+
+```json
+{ "US": "United States", "CA": "Canada", "MX": "Mexico" }
+```
+
+**Partial rows** — multiple valueKeys return a subset of columns:
+
+```json
+{ "get": { "returnFormat": ["struct", "id", ["username", "email"]] } }
+```
+
+```json
+{
+  "1": { "username": "alice", "email": "alice@example.com" },
+  "2": { "username": "bob", "email": "bob@example.com" }
+}
+```
+
+**With pagination** — `results` is a struct, pagination metadata unchanged:
+
+```json
+{ "paginate": { "page": 1, "maxRows": 25, "returnFormat": ["struct", "orderId"] } }
+```
+
+```json
+{
+  "pagination": { "page": 1, "maxRows": 25, "totalRecords": 150, "totalPages": 6 },
+  "results": {
+    "1001": { "orderId": 1001, "total": 59.99, "status": "shipped" },
+    "1002": { "orderId": 1002, "total": 124.50, "status": "pending" }
+  }
+}
+```
+
+> **Duplicate keys:** If multiple rows share the same columnKey value, the last row wins.
+> Use a unique column (primary key, code, etc.) for predictable results.
+>
+> **Validation:** If `columnKey` or any `valueKeys` entry doesn't match a column in the
+> result set, a `QBML.InvalidColumnKey` or `QBML.InvalidValueKey` error is thrown with
+> a message listing the available columns.
+
+### Tabular Format
+
+Compact columnar format with type metadata — ideal for bandwidth-sensitive APIs and Quasar QTable integration:
+
+```json
+{
+    "columns": [
+        { "name": "id", "type": "integer" },
+        { "name": "name", "type": "varchar" },
+        { "name": "created_at", "type": "datetime" }
+    ],
+    "rows": [
+        [1, "Alice", "2024-01-15T10:30:00Z"],
+        [2, "Bob", "2024-01-16T14:22:00Z"]
+    ]
+}
+```
+
+With pagination:
+
+```json
+{
+    "pagination": { "page": 1, "maxRows": 25, "totalRecords": 150, "totalPages": 6 },
+    "results": { "columns": [...], "rows": [...] }
+}
+```
+
+**Detected Types:** `integer`, `bigint`, `decimal`, `varchar`, `boolean`, `datetime`, `uuid`, `object`, `array`
+
+For browser-side tabular conversion (detabulate, QTable helpers, TypeScript types), see [schemas/README.md](schemas/README.md).
+
+[Back to top](#qbml---query-builder-markup-language)
 
 ## QBML Schema Reference
 
@@ -349,28 +476,7 @@ Generates: `WHERE (status = 'active' OR role = 'admin')`
 ]
 ```
 
-Multiple CTEs:
-
-```json
-[
-    {
-        "with": "managers",
-        "query": [
-            { "from": "users" },
-            { "whereIn": ["role", ["admin", "manager"]] }
-        ]
-    },
-    {
-        "with": "active_managers",
-        "query": [
-            { "from": "managers" },
-            { "where": ["status", "active"] }
-        ]
-    },
-    { "from": "active_managers" },
-    { "get": true }
-]
-```
+Chain multiple CTEs by adding more `with` actions — each can reference previously defined CTEs.
 
 ### Unions
 
@@ -421,13 +527,81 @@ Multiple CTEs:
 }
 ```
 
-## Parameters
+[Back to top](#qbml---query-builder-markup-language)
+
+## Lock Methods
+
+Control row-level locking for transactional queries:
+
+```json
+{ "lockForUpdate": true }
+{ "sharedLock": true }
+{ "noLock": true }
+{ "clearLock": true }
+{ "lock": "custom_lock_expression" }
+```
+
+`lockForUpdate` accepts an optional boolean for `skipLocked`:
+
+```json
+{ "lockForUpdate": true }                     // Default (no skip)
+{ "lockForUpdate": false }                    // skipLocked = false
+```
+
+[Back to top](#qbml---query-builder-markup-language)
+
+## Object-Form Arguments
+
+As an alternative to positional arrays, use named keys for readability:
+
+```json
+// Array form
+{ "where": ["status", "=", "active"] }
+
+// Object form (equivalent)
+{ "where": { "column": "status", "operator": "=", "value": "active" } }
+```
+
+Object form works with all combinator prefixes (`and`/`or`) and negation (`not`) variants.
+
+| Action | Object Keys |
+|--------|------------|
+| `where` | `{ column, operator?, value }` |
+| `whereIn` | `{ column, values }` |
+| `whereBetween` | `{ column, start, end }` |
+| `whereLike` | `{ column, value }` |
+| `whereNull` | `{ column }` |
+| `whereColumn` | `{ first, operator?, second }` |
+| `join` | `{ table, first, operator?, second }` |
+| `orderBy` | `{ column, direction? }` |
+| `having` | `{ column, operator?, value }` |
+| `forPage` | `{ page, size }` |
+| `limit` / `offset` | `{ value }` |
+| `select` / `groupBy` | `{ columns }` or `{ column }` |
+| `from` | `{ table }` or `{ name }` |
+| `*Raw` | `{ sql, bindings? }` |
+
+Example with joins and ordering:
+
+```json
+[
+    { "from": { "table": "users" } },
+    { "leftJoin": { "table": "orders", "first": "users.id", "operator": "=", "second": "orders.user_id" } },
+    { "where": { "column": "status", "value": "active" } },
+    { "orderBy": { "column": "name", "direction": "asc" } },
+    { "get": true }
+]
+```
+
+[Back to top](#qbml---query-builder-markup-language)
+
+## Parameters & Dynamic Queries
 
 QBML supports runtime parameters that enable dynamic query building without string interpolation. This is especially useful for dataviewer-style applications where queries are stored in a database and parameters are injected at execution time.
 
-### Basic Usage
+### $param Reference
 
-Pass parameters via the `options.params` argument:
+Use `{ "$param": "paramName" }` to reference a parameter value anywhere in your query:
 
 ```cfml
 var query = [
@@ -440,9 +614,7 @@ var query = [
 var results = qbml.execute( query, { params: { accountIDs: [1, 2, 3] } } );
 ```
 
-### $param Reference
-
-Use `{ "$param": "paramName" }` to reference a parameter value anywhere in your query:
+Works in any value position:
 
 ```json
 { "whereIn": ["status", { "$param": "statuses" }] }
@@ -452,36 +624,18 @@ Use `{ "$param": "paramName" }` to reference a parameter value anywhere in your 
 
 ### String Template Interpolation
 
-For LIKE patterns and other string interpolation needs, use the `$paramName$` syntax to embed parameter values directly in strings:
+For LIKE patterns and string composition, use `$paramName$` syntax to embed values directly in strings:
 
 ```json
 { "whereLike": ["name", "%$filter$%"] }
 { "whereLike": ["email", "$domain$%"] }
-{ "whereLike": ["filename", "%$extension$"] }
-{ "where": ["code", "like", "PREFIX-$code$-SUFFIX"] }
-```
-
-Execute with parameters:
-
-```cfml
-// Search for users with "john" in their name
-var results = qbml.execute( query, { params: { filter: "john" } } );
-// Generates: WHERE name LIKE '%john%'
-
-// Find emails starting with a domain
-var results = qbml.execute( query, { params: { domain: "example.com" } } );
-// Generates: WHERE email LIKE 'example.com%'
-```
-
-This is especially useful for search functionality where you want the query definition to specify the LIKE pattern structure while the actual search term comes from user input.
-
-Multiple params can be interpolated in a single string:
-
-```json
 { "where": ["sku", "like", "$category$-$year$-%"] }
 ```
 
 ```cfml
+qbml.execute( query, { params: { filter: "john" } } );
+// Generates: WHERE name LIKE '%john%'
+
 qbml.execute( query, { params: { category: "ELEC", year: "2024" } } );
 // Generates: WHERE sku LIKE 'ELEC-2024-%'
 ```
@@ -490,7 +644,7 @@ qbml.execute( query, { params: { category: "ELEC", year: "2024" } } );
 
 ### Param-Based Conditions
 
-The real power comes from combining `$param` with `when` conditions. This lets you skip clauses entirely when parameters are empty:
+The real power comes from combining `$param` with `when` conditions. Skip clauses entirely when parameters are empty:
 
 ```json
 {
@@ -499,7 +653,7 @@ The real power comes from combining `$param` with `when` conditions. This lets y
 }
 ```
 
-If `accountIDs` is empty, the entire `whereIn` clause is skipped—no `WHERE 0 = 1`!
+If `accountIDs` is empty, the entire `whereIn` clause is skipped — no `WHERE 0 = 1`!
 
 ### Param Condition Types
 
@@ -517,7 +671,7 @@ If `accountIDs` is empty, the entire `whereIn` clause is skipped—no `WHERE 0 =
 
 ### Complex Dataviewer Example
 
-Store this query in your database:
+Store this query in your database and execute with any combination of filters:
 
 ```json
 [
@@ -549,9 +703,8 @@ Store this query in your database:
 ]
 ```
 
-Execute with parameters:
-
 ```cfml
+// All filters
 var results = qbml.execute( storedQuery, {
     params: {
         accountIDs: [1, 2, 3],
@@ -561,14 +714,12 @@ var results = qbml.execute( storedQuery, {
         types: ["credit", "debit"]
     }
 });
-```
 
-Only the clauses whose conditions pass will be included. Pass empty params to skip filters entirely:
-
-```cfml
-// No filters - returns all transactions
+// No filters — returns all transactions
 var results = qbml.execute( storedQuery, { params: {} });
 ```
+
+[Back to top](#qbml---query-builder-markup-language)
 
 ## Conditional Actions
 
@@ -610,6 +761,8 @@ If the array is empty, the `whereIn` is skipped entirely (no `WHERE 0 = 1`).
 }
 ```
 
+[Back to top](#qbml---query-builder-markup-language)
+
 ## Executors
 
 Executors determine how the query runs and what it returns:
@@ -645,147 +798,72 @@ Pass execution options with the executor:
 }
 ```
 
-### Return Formats
+Return format can also be set per-executor — see [Return Formats](#return-formats).
 
-For `get`, `paginate`, and `simplePaginate`, you can control the result format:
+[Back to top](#qbml---query-builder-markup-language)
 
-- **`"array"`** (default) — Array of structs: `[{ id: 1, name: "Alice" }, ...]`
-- **`"tabular"`** — Compact `{ columns, rows }` with type metadata
-- **`"query"`** — Native CFML query object
-- **`["struct", columnKey]`** — Struct keyed by a column value (lookup maps, master-detail)
-- **`["struct", columnKey, valueKeys]`** — Struct of partial rows or scalar values
+## Security
 
-> All formats accept tuple syntax: `["array"]` is equivalent to `"array"`.
-> Struct **requires** tuple syntax since it needs a columnKey parameter.
+QBML includes multiple security layers:
 
-**Priority Order:** Execute options > Query definition > Config defaults
+### Table Access Control
 
-**Setting the Default Format:**
+- **Allowlist mode**: Only explicitly listed tables are accessible
+- **Blocklist mode**: All tables except those listed are accessible
+- Wildcard patterns: `"reporting.*"`, `"*.audit_log"`
+- Table aliases automatically resolved and validated
 
-```cfml
-defaults : {
-    returnFormat : "tabular"           // All queries return tabular by default
-    // returnFormat : ["struct", "id"] // All queries return struct keyed by id
-}
+### SQL Injection Protection
+
+- Raw expressions validated against dangerous patterns
+- Blocks: `DROP`, `DELETE`, `TRUNCATE`, `INSERT`, `UPDATE`, `EXEC`, `--`, `/*`, `xp_`, `WAITFOR`, etc.
+- All values parameterized through QB
+
+### Input Validation
+
+- Table and column names validated
+- CTE aliases automatically allowed in their query scope
+- Subqueries recursively validated
+
+[Back to top](#qbml---query-builder-markup-language)
+
+## QBML Editor
+
+QBML includes a production-ready Monaco-powered JSON editor component for Vue 3 / Quasar. Schema-driven autocomplete, 50+ snippets, real-time validation, and pinnable hover tooltips with qb documentation links.
+
+- **Autocomplete** — schema-driven suggestions for all QBML actions and their arguments
+- **50+ Snippets** — full query templates and individual clauses, organized by category in a toolbar dropdown
+- **Real-time Validation** — JSON Schema validation with clickable error navigation
+- **Pinnable Hover Tooltips** — rich markdown with code examples and links to qb docs
+- **Toolbar** — undo/redo, format, compact, sort keys, expand/collapse all
+- **Progressive Enhancement** — works as a generic JSON editor, enhanced with QBML schema
+- **v-model + Events** — string v-model, `validation` and `ready` events, exposed methods
+
+### Minimal Integration
+
+```vue
+<template>
+  <MonacoJsonEditor
+    v-model="query"
+    v-bind="getEditorProps('qbml')"
+    title="QBML Query"
+    height="500px"
+  />
+</template>
+
+<script setup>
+import { ref } from "vue";
+import MonacoJsonEditor from "src/components/MonacoJsonEditor.vue";
+import { useJsonSchema } from "src/composables/useJsonSchema";
+
+const { getEditorProps } = useJsonSchema();
+const query = ref('[\n  { "from": "users" },\n  { "select": ["*"] },\n  { "get": true }\n]');
+</script>
 ```
 
-**Per-Query Override:**
+Full documentation: [schemas/README.md](schemas/README.md) | Demo app: [qbml-editor-quasar/](qbml-editor-quasar/)
 
-```json
-{ "get": { "returnFormat": "tabular" } }
-{ "get": { "returnFormat": "query" } }
-{ "get": { "returnFormat": ["struct", "id"] } }
-{ "get": { "returnFormat": ["struct", "code", ["label"]] } }
-{ "paginate": { "page": 1, "maxRows": 25, "returnFormat": ["struct", "orderId"] } }
-```
-
-**Runtime Override:**
-
-```cfml
-qbml.execute( query, { returnFormat : "query" } );
-qbml.execute( query, { returnFormat : [ "struct", "id" ] } );
-```
-
-#### Struct Format
-
-Returns results as a struct keyed by a column value — ideal for translation maps,
-lookup tables, and master-detail relationships where you need fast key-based access.
-
-**Full rows keyed by id:**
-
-```json
-{ "get": { "returnFormat": ["struct", "id"] } }
-```
-
-```json
-{
-  "1": { "id": 1, "username": "alice", "email": "alice@example.com" },
-  "2": { "id": 2, "username": "bob", "email": "bob@example.com" }
-}
-```
-
-**Translation map** — single valueKey returns scalar values:
-
-```json
-{ "get": { "returnFormat": ["struct", "code", ["label"]] } }
-```
-
-```json
-{ "US": "United States", "CA": "Canada", "MX": "Mexico" }
-```
-
-**Partial rows** — multiple valueKeys return a subset of columns:
-
-```json
-{ "get": { "returnFormat": ["struct", "id", ["username", "email"]] } }
-```
-
-```json
-{
-  "1": { "username": "alice", "email": "alice@example.com" },
-  "2": { "username": "bob", "email": "bob@example.com" }
-}
-```
-
-**Pagination** — `results` is a struct, pagination metadata is unchanged:
-
-```json
-{ "paginate": { "page": 1, "maxRows": 25, "returnFormat": ["struct", "orderId"] } }
-```
-
-```json
-{
-  "pagination": { "page": 1, "maxRows": 25, "totalRecords": 150, "totalPages": 6 },
-  "results": {
-    "1001": { "orderId": 1001, "total": 59.99, "status": "shipped" },
-    "1002": { "orderId": 1002, "total": 124.50, "status": "pending" }
-  }
-}
-```
-
-> **Duplicate keys:** If multiple rows share the same columnKey value, the last row wins.
-> Use a unique column (primary key, code, etc.) for predictable results.
->
-> **Validation:** If `columnKey` or any value in `valueKeys` doesn't match a column in the
-> result set, a `QBML.InvalidColumnKey` or `QBML.InvalidValueKey` error is thrown with a
-> message listing the available columns.
-
-#### Tabular Format
-
-**Tabular format structure:**
-
-```json
-{
-    "columns": [
-        { "name": "id", "type": "integer" },
-        { "name": "name", "type": "varchar" },
-        { "name": "created_at", "type": "datetime" }
-    ],
-    "rows": [
-        [1, "Alice", "2024-01-15T10:30:00Z"],
-        [2, "Bob", "2024-01-16T14:22:00Z"]
-    ]
-}
-```
-
-For pagination with tabular format:
-
-```json
-{
-    "pagination": {
-        "page": 1,
-        "maxRows": 25,
-        "totalRecords": 150,
-        "totalPages": 6
-    },
-    "results": {
-        "columns": [...],
-        "rows": [...]
-    }
-}
-```
-
-**Tabular Detected Types**: `integer`, `bigint`, `decimal`, `varchar`, `boolean`, `datetime`, `uuid`, `object`, `array`
+[Back to top](#qbml---query-builder-markup-language)
 
 ## API Reference
 
@@ -819,187 +897,9 @@ var sql = qbml.toSQL( queryArray, { accountIDs: [1, 2, 3] } );
 var resolved = qbml.resolveParamRefs( value, params );
 ```
 
-### Tabular Service
+For the ReturnFormat service API, browser-side detabulator functions, and QTable helpers, see [schemas/README.md](schemas/README.md).
 
-```cfml
-// Inject
-property name="returnFormat" inject="ReturnFormat@qbml";
-
-// Convert array of structs to tabular format
-var result = returnFormat.fromArray( data );
-
-// Convert query object to tabular format (accurate DB types)
-var result = returnFormat.fromQuery( queryObject );
-
-// Transform any results using a parsed format spec
-var rf     = returnFormat.parse( "tabular" );
-var result = returnFormat.transform( data, rf );
-
-// Transform pagination result
-var result = returnFormat.transformPaginated( paginationResult, rf, "results" );
-
-// Decompress tabular back to array of structs
-var data = returnFormat.toArray( tabularData );
-```
-
-### Browser-Side Detabulator (JavaScript/TypeScript)
-
-For frontend applications, QBML provides browser-side utilities to convert tabular format back to arrays. This is useful when your API returns tabular format for bandwidth efficiency, but your UI components expect arrays of objects.
-
-**Installation:**
-
-Copy `schemas/tabular.js` or `schemas/tabular.ts` to your frontend project.
-
-**TypeScript Usage:**
-
-```typescript
-import { detabulate, detabulatePagination, isTabular } from './tabular';
-
-// API returns tabular format
-const response = await fetch('/api/users');
-const data = await response.json();
-
-// Check format and convert if needed
-if (isTabular(data)) {
-    const users = detabulate(data);
-    // users = [{ id: 1, name: "Alice" }, { id: 2, name: "Bob" }]
-}
-
-// For pagination results
-const paginatedResponse = await fetch('/api/users?page=1');
-const paginatedData = await paginatedResponse.json();
-
-if (isTabularPagination(paginatedData)) {
-    const result = detabulatePagination(paginatedData);
-    // result.pagination = { page: 1, maxRows: 25, totalRecords: 100, totalPages: 4 }
-    // result.results = [{ id: 1, name: "Alice" }, ...]
-}
-```
-
-**JavaScript Usage:**
-
-```javascript
-import { detabulate, detabulatePagination } from './tabular.js';
-
-// Convert tabular to array
-const tabular = {
-    columns: [
-        { name: "id", type: "integer" },
-        { name: "name", type: "varchar" }
-    ],
-    rows: [[1, "Alice"], [2, "Bob"]]
-};
-
-const array = detabulate(tabular);
-// [{ id: 1, name: "Alice" }, { id: 2, name: "Bob" }]
-```
-
-**Available Functions:**
-
-| Function | Description |
-|----------|-------------|
-| `detabulate(tabular)` | Convert tabular format to array of objects |
-| `detabulatePagination(result)` | Convert pagination result with tabular data |
-| `tabulate(array)` | Convert array of objects to tabular format |
-| `tabulatePagination(result)` | Convert pagination result to tabular format |
-| `isTabular(data)` | Check if data is in tabular format |
-| `isTabularPagination(data)` | Check if pagination result has tabular data |
-| `getColumnNames(tabular)` | Get array of column names |
-| `getColumnTypes(tabular)` | Get map of column names to types |
-| `getRow(tabular, index)` | Get single row as object |
-| `getColumn(tabular, name)` | Get column values as array |
-| `toQTableColumns(tabular, options)` | Generate Quasar QTable column definitions |
-| `toQTable(tabular, options)` | Generate QTable-ready { columns, rows } |
-| `toQTablePagination(result, options)` | Generate QTable structure with pagination |
-
-**Quasar QTable Integration:**
-
-The `toQTable*` functions generate column definitions with intelligent formatting:
-- **Alignment**: Numbers and dates align right, strings align left, booleans center
-- **Formatting**: Numbers get thousand separators, dates use locale-aware formatting
-- **Sorting**: Type-appropriate sort functions for proper numeric/date sorting
-- **Labels**: Column names converted from `snake_case`/`camelCase` to "Title Case"
-
-```javascript
-import { toQTable, toQTablePagination } from './tabular.js';
-
-// Simple usage - generates columns and rows
-const tabular = await fetchData(); // { columns: [...], rows: [...] }
-const { columns, rows } = toQTable(tabular);
-
-// With options
-const { columns, rows } = toQTable(tabular, {
-    dateFormat: 'short',           // 'short', 'medium', 'long', 'iso', or custom function
-    locale: 'en-US',               // Locale for formatting
-    decimalPlaces: 2,              // Decimal precision
-    useThousandSeparator: true,    // 1000 -> "1,000"
-    sortable: true,                // Enable column sorting
-    columnOverrides: {             // Per-column customization
-        status: { align: 'center', label: 'Status' }
-    }
-});
-
-// For paginated results
-const result = await fetchPaginatedData();
-const { columns, rows, pagination } = toQTablePagination(result);
-```
-
-```html
-<q-table
-    :columns="columns"
-    :rows="rows"
-    :pagination="pagination"
-    row-key="id"
-/>
-```
-
-**Type Definitions (TypeScript):**
-
-```typescript
-interface TabularColumn {
-    name: string;
-    type: 'integer' | 'bigint' | 'decimal' | 'varchar' | 'boolean' |
-          'datetime' | 'uuid' | 'object' | 'array' | 'binary' | 'unknown';
-}
-
-interface TabularData<T = Record<string, unknown>> {
-    columns: TabularColumn[];
-    rows: unknown[][];
-}
-
-interface TabularPaginationResult<T = Record<string, unknown>> {
-    pagination: {
-        page: number;
-        maxRows: number;
-        totalRecords: number;
-        totalPages: number;
-    };
-    results: TabularData<T>;
-}
-```
-
-## Security
-
-QBML includes multiple security layers:
-
-### Table Access Control
-
-- **Allowlist mode**: Only explicitly listed tables are accessible
-- **Blocklist mode**: All tables except those listed are accessible
-- Wildcard patterns: `"reporting.*"`, `"*.audit_log"`
-- Table aliases automatically resolved and validated
-
-### SQL Injection Protection
-
-- Raw expressions validated against dangerous patterns
-- Blocks: `DROP`, `DELETE`, `TRUNCATE`, `INSERT`, `UPDATE`, `EXEC`, `--`, `/*`, `xp_`, `WAITFOR`, etc.
-- All values parameterized through QB
-
-### Input Validation
-
-- Table and column names validated
-- CTE aliases automatically allowed in their query scope
-- Subqueries recursively validated
+[Back to top](#qbml---query-builder-markup-language)
 
 ## Examples
 
@@ -1065,7 +965,25 @@ function list( event, rc, prc ) {
 }
 ```
 
-## Testing
+### Pagination with Parameters
+
+```cfml
+var paged = qbml.execute([
+    { "from": "orders" },
+    { "select": ["id", "total", "created_at"] },
+    { "paginate": { "page": 1, "maxRows": 25 } }
+]);
+
+// Get SQL without executing
+var sql = qbml.toSQL([
+    { "from": "users" },
+    { "where": ["role", "admin"] }
+]);
+```
+
+[Back to top](#qbml---query-builder-markup-language)
+
+## Testing & Contributing
 
 ```bash
 # Install dependencies
@@ -1074,8 +992,6 @@ box install
 # Run tests
 box testbox run
 ```
-
-## Contributing
 
 1. Fork the repository
 2. Create a feature branch
@@ -1102,6 +1018,8 @@ QBML is built on top of the excellent [QueryBuilder (qb)](https://qb.ortusbooks.
 - [TestBox](https://testbox.ortusbooks.com/) - BDD/TDD testing framework
 - [CommandBox](https://commandbox.ortusbooks.com/) - CLI and package manager
 
+Created by John Wilson
+
 ---
 
-*Inspired by the need for portable, secure query definitions*
+*Soli Deo Gloria*
